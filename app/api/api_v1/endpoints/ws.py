@@ -14,8 +14,10 @@ import json
 from datetime import datetime
 from uuid import uuid4
 from collections import deque
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.websocket("/chat")
 async def websocket_endpoint(
@@ -182,14 +184,14 @@ async def websocket_endpoint(
             elif event.event.startswith("call."):
                 payload = event.data if isinstance(event.data, dict) else None
                 if not payload:
-                    await websocket.send_json({"error": "Invalid call payload"})
+                    await websocket.send_json({"event": "call.error", "data": {"message": "Invalid call payload", "context_event": event.event}})
                     continue
 
                 async with AsyncSessionLocal() as db:
                     if event.event == "call.invite":
                         target_user_id = payload.get("to_user_id") or payload.get("receiver_id") or payload.get("peer_user_id")
                         if not target_user_id:
-                            await websocket.send_json({"error": "Missing call recipient"})
+                            await websocket.send_json({"event": "call.error", "data": {"message": "Missing call recipient", "context_event": event.event}})
                             continue
 
                         now = datetime.utcnow()
@@ -197,19 +199,19 @@ async def websocket_endpoint(
                         recent.append(now)
                         invite_timestamps = deque(recent)
                         if len(invite_timestamps) > 3:
-                            await websocket.send_json({"error": "Too many call invites"})
+                            await websocket.send_json({"event": "call.error", "data": {"message": "Too many call invites", "context_event": event.event}})
                             continue
 
                         room_id = payload.get("room_id")
                         allowed = await can_initiate_call(db, current_user.id, target_user_id, room_id)
                         if not allowed:
-                            await websocket.send_json({"error": "Not allowed to call this user"})
+                            await websocket.send_json({"event": "call.error", "data": {"message": "Not allowed to call this user", "context_event": event.event}})
                             continue
 
                         call_id = payload.get("call_id") or str(uuid4())
                         existing_call = await db.get(CallSession, call_id)
                         if existing_call is not None:
-                            await websocket.send_json({"error": "Call already exists"})
+                            await websocket.send_json({"event": "call.error", "data": {"message": "Call already exists", "context_event": event.event, "call_id": call_id}})
                             continue
 
                         call = CallSession(
@@ -227,16 +229,16 @@ async def websocket_endpoint(
                     else:
                         call_id = payload.get("call_id")
                         if not call_id:
-                            await websocket.send_json({"error": "Missing call_id"})
+                            await websocket.send_json({"event": "call.error", "data": {"message": "Missing call_id", "context_event": event.event}})
                             continue
 
                         call = await db.get(CallSession, call_id)
                         if call is None:
-                            await websocket.send_json({"error": "Unknown call"})
+                            await websocket.send_json({"event": "call.error", "data": {"message": "Unknown call", "context_event": event.event, "call_id": call_id}})
                             continue
 
                         if current_user.id not in {call.caller_id, call.callee_id}:
-                            await websocket.send_json({"error": "Not authorized for this call"})
+                            await websocket.send_json({"event": "call.error", "data": {"message": "Not authorized for this call", "context_event": event.event, "call_id": call_id}})
                             continue
 
                         other_user_id = call.callee_id if current_user.id == call.caller_id else call.caller_id
@@ -262,4 +264,5 @@ async def websocket_endpoint(
     except WebSocketDisconnect:
         await manager.disconnect(current_user.id)
     except Exception as e:
+        logger.exception("Unhandled websocket error")
         await manager.disconnect(current_user.id)

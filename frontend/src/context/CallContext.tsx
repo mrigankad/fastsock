@@ -26,6 +26,10 @@ type IncomingCall = {
   offer: RTCSessionDescriptionJSON;
 };
 
+type CallAcceptOptions = {
+  video?: boolean;
+};
+
 interface CallContextType {
   status: CallStatus;
   peerUserId: number | null;
@@ -34,11 +38,12 @@ interface CallContextType {
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
   startCall: (toUserId: number, roomId?: number) => Promise<void>;
-  acceptCall: () => Promise<void>;
+  acceptCall: (options?: CallAcceptOptions) => Promise<void>;
   rejectCall: () => void;
   hangup: () => void;
   toggleMute: () => void;
   toggleCamera: () => void;
+  isAccepting: boolean;
   isMuted: boolean;
   isCameraOff: boolean;
 }
@@ -48,6 +53,38 @@ const CallContext = createContext<CallContextType | null>(null);
 const defaultIceServers: RTCIceServer[] = [
   { urls: ['stun:stun.l.google.com:19302'] },
 ];
+
+const getErrorMessage = (err: unknown) => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return 'Unknown error';
+};
+
+const getMediaErrorMessage = (err: unknown) => {
+  const name = err instanceof DOMException ? err.name : undefined;
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Permission denied for camera/microphone';
+  if (name === 'NotFoundError') return 'No camera/microphone found';
+  if (name === 'NotReadableError') return 'Device in use (close other apps using camera/mic)';
+  if (name === 'AbortError') return 'Could not start video source';
+  return getErrorMessage(err);
+};
+
+const acquireMedia = async (wantVideo: boolean) => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: wantVideo });
+    return { stream, video: wantVideo };
+  } catch (err) {
+    if (wantVideo) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        return { stream, video: false };
+      } catch {
+        throw err;
+      }
+    }
+    throw err;
+  }
+};
 
 export const CallProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
@@ -61,12 +98,35 @@ export const CallProvider = ({ children }: { children: ReactNode }) => {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
+  const [isAccepting, setIsAccepting] = useState(false);
   const [iceServers, setIceServers] = useState<RTCIceServer[]>(defaultIceServers);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const pendingRemoteCandidatesRef = useRef<RTCIceCandidateJSON[]>([]);
   const callIdRef = useRef<string | null>(null);
   const peerUserIdRef = useRef<number | null>(null);
+  const isAcceptingRef = useRef(false);
+
+  const resetMediaAndPeer = useCallback(() => {
+    pendingRemoteCandidatesRef.current = [];
+
+    if (pcRef.current) {
+      pcRef.current.onicecandidate = null;
+      pcRef.current.ontrack = null;
+      pcRef.current.onconnectionstatechange = null;
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+
+    if (localStream) {
+      localStream.getTracks().forEach(t => t.stop());
+    }
+
+    setLocalStream(null);
+    setRemoteStream(null);
+    setIsMuted(false);
+    setIsCameraOff(false);
+  }, [localStream]);
 
   const cleanup = useCallback(() => {
     pendingRemoteCandidatesRef.current = [];
@@ -136,35 +196,44 @@ export const CallProvider = ({ children }: { children: ReactNode }) => {
       toast.error('Already in a call');
       return;
     }
+    try {
+      const newCallId = crypto.randomUUID();
+      callIdRef.current = newCallId;
+      peerUserIdRef.current = toUserId;
+      setCallId(newCallId);
+      setStatus('outgoing');
+      setPeerUserId(toUserId);
 
-    const newCallId = crypto.randomUUID();
-    callIdRef.current = newCallId;
-    peerUserIdRef.current = toUserId;
-    setCallId(newCallId);
-    setStatus('outgoing');
-    setPeerUserId(toUserId);
+      const { stream, video } = await acquireMedia(true);
+      setLocalStream(stream);
+      setIsCameraOff(!video);
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    setLocalStream(stream);
+      if (!video) {
+        toast.error('Camera is busy/unavailable. Starting an audio-only call.');
+      }
 
-    const pc = ensurePeerConnection();
-    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      const pc = ensurePeerConnection();
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
 
-    const payload = {
-      call_id: newCallId,
-      to_user_id: toUserId,
-      room_id: roomId,
-      sdp_offer: { type: offer.type, sdp: offer.sdp } as RTCSessionDescriptionJSON,
-      media: { audio: true, video: true },
-    };
+      const payload = {
+        call_id: newCallId,
+        to_user_id: toUserId,
+        room_id: roomId,
+        sdp_offer: { type: offer.type, sdp: offer.sdp } as RTCSessionDescriptionJSON,
+        media: { audio: true, video },
+      };
 
-    send('call.invite', payload);
-  }, [ensurePeerConnection, isConnected, send, status, user]);
+      send('call.invite', payload);
+    } catch (err) {
+      toast.error(`Could not start call: ${getMediaErrorMessage(err)}`);
+      cleanup();
+    }
+  }, [cleanup, ensurePeerConnection, isConnected, send, status, user]);
 
-  const acceptCall = useCallback(async () => {
+  const acceptCall = useCallback(async (options?: CallAcceptOptions) => {
     if (!user) return;
     if (!incomingCall) return;
     if (!isConnected) {
@@ -173,36 +242,55 @@ export const CallProvider = ({ children }: { children: ReactNode }) => {
     }
     if (status !== 'incoming') return;
 
-    callIdRef.current = incomingCall.callId;
-    peerUserIdRef.current = incomingCall.fromUserId;
-    setCallId(incomingCall.callId);
-    setPeerUserId(incomingCall.fromUserId);
+    if (isAcceptingRef.current) return;
+    isAcceptingRef.current = true;
+    setIsAccepting(true);
 
-    const pc = ensurePeerConnection();
+    try {
+      callIdRef.current = incomingCall.callId;
+      peerUserIdRef.current = incomingCall.fromUserId;
+      setCallId(incomingCall.callId);
+      setPeerUserId(incomingCall.fromUserId);
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    setLocalStream(stream);
-    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      const pc = ensurePeerConnection();
 
-    await pc.setRemoteDescription(incomingCall.offer);
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
+      const wantVideo = options?.video !== false;
+      const { stream, video } = await acquireMedia(wantVideo);
+      setLocalStream(stream);
+      setIsCameraOff(!video);
 
-    while (pendingRemoteCandidatesRef.current.length > 0) {
-      const c = pendingRemoteCandidatesRef.current.shift();
-      if (!c) continue;
-      await pc.addIceCandidate(c);
+      if (wantVideo && !video) {
+        toast.error('Camera is busy/unavailable. Accepting as audio-only.');
+      }
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      await pc.setRemoteDescription(incomingCall.offer);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      while (pendingRemoteCandidatesRef.current.length > 0) {
+        const c = pendingRemoteCandidatesRef.current.shift();
+        if (!c) continue;
+        await pc.addIceCandidate(c);
+      }
+
+      send('call.accept', {
+        call_id: incomingCall.callId,
+        to_user_id: incomingCall.fromUserId,
+        sdp_answer: { type: answer.type, sdp: answer.sdp } as RTCSessionDescriptionJSON,
+        media: { audio: true, video },
+      });
+
+      setIncomingCall(null);
+      setStatus('active');
+    } catch (err) {
+      toast.error(`Could not accept call: ${getMediaErrorMessage(err)}`);
+      resetMediaAndPeer();
+    } finally {
+      isAcceptingRef.current = false;
+      setIsAccepting(false);
     }
-
-    send('call.accept', {
-      call_id: incomingCall.callId,
-      to_user_id: incomingCall.fromUserId,
-      sdp_answer: { type: answer.type, sdp: answer.sdp } as RTCSessionDescriptionJSON,
-    });
-
-    setIncomingCall(null);
-    setStatus('active');
-  }, [ensurePeerConnection, incomingCall, isConnected, send, status, user]);
+  }, [ensurePeerConnection, incomingCall, isConnected, resetMediaAndPeer, send, status, user]);
 
   const rejectCall = useCallback(() => {
     if (!incomingCall) return;
@@ -252,9 +340,18 @@ export const CallProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const unsub = subscribe((msg: WSEvent) => {
+      if (typeof msg.event !== 'string') return;
       if (!msg.event.startsWith('call.')) return;
 
       const data = msg.data as Record<string, unknown>;
+
+      if (msg.event === 'call.error') {
+        const message = typeof data.message === 'string' ? data.message : 'Call failed';
+        toast.error(message);
+        cleanup();
+        return;
+      }
+
       const incomingCallId = data.call_id as string | undefined;
       const fromUserId = data.from_user_id as number | undefined;
 
@@ -297,7 +394,10 @@ export const CallProvider = ({ children }: { children: ReactNode }) => {
               await pc.addIceCandidate(c);
             }
           })
-          .catch(() => {});
+          .catch((err) => {
+            toast.error(`Call setup failed: ${getErrorMessage(err)}`);
+            cleanup();
+          });
         setStatus('active');
         return;
       }
@@ -310,7 +410,9 @@ export const CallProvider = ({ children }: { children: ReactNode }) => {
           pendingRemoteCandidatesRef.current.push(candidate);
           return;
         }
-        pc.addIceCandidate(candidate).catch(() => {});
+        pc.addIceCandidate(candidate).catch((err) => {
+          toast.error(`ICE candidate failed: ${getErrorMessage(err)}`);
+        });
         return;
       }
 
@@ -336,6 +438,7 @@ export const CallProvider = ({ children }: { children: ReactNode }) => {
     hangup,
     toggleMute,
     toggleCamera,
+    isAccepting,
     isMuted,
     isCameraOff,
   }), [
@@ -343,6 +446,7 @@ export const CallProvider = ({ children }: { children: ReactNode }) => {
     callId,
     hangup,
     incomingCall,
+    isAccepting,
     isCameraOff,
     isMuted,
     localStream,

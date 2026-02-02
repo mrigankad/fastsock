@@ -154,7 +154,7 @@ const Chat: React.FC = () => {
                 if (Notification.permission === 'granted' && currentUserId != null && msg.sender_id !== currentUserId) {
                     new Notification('New Message', {
                         body: msg.content.startsWith('/static/') ? 'Sent a file' : msg.content,
-                        icon: '/vite.svg' // Placeholder
+                        icon: '/favicon.svg' // Placeholder
                     });
                 }
             }

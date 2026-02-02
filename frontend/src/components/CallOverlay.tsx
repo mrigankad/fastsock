@@ -23,7 +23,7 @@ const VideoTile = ({ stream, muted, className }: { stream: MediaStream | null; m
 };
 
 export const CallOverlay = () => {
-  const { status, incomingCall, acceptCall, rejectCall, hangup, localStream, remoteStream, toggleMute, toggleCamera, isMuted, isCameraOff } = useCall();
+  const { status, incomingCall, acceptCall, rejectCall, hangup, localStream, remoteStream, toggleMute, toggleCamera, isMuted, isCameraOff, isAccepting } = useCall();
 
   return (
     <>
@@ -34,7 +34,8 @@ export const CallOverlay = () => {
         footer={(
           <div className="flex items-center justify-end gap-3">
             <Button variant="secondary" onClick={rejectCall}>Reject</Button>
-            <Button onClick={acceptCall}>Accept</Button>
+            <Button variant="secondary" onClick={() => acceptCall({ video: false })} loading={isAccepting}>Audio only</Button>
+            <Button onClick={() => acceptCall({ video: true })} loading={isAccepting}>Accept</Button>
           </div>
         )}
       >
@@ -87,4 +88,3 @@ export const CallOverlay = () => {
     </>
   );
 };
-

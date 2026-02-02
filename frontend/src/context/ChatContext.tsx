@@ -3,6 +3,13 @@ import toast from 'react-hot-toast';
 import { useAuth } from './AuthContext';
 import type { WSEvent } from '../types';
 
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+
+const isWSEvent = (v: unknown): v is WSEvent => {
+  if (!isRecord(v)) return false;
+  return typeof v.event === 'string' && 'data' in v;
+};
+
 interface ChatContextType {
   ws: WebSocket | null;
   isConnected: boolean;
@@ -69,7 +76,21 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     };
 
     socket.onmessage = (event) => {
-      const msg = JSON.parse(event.data) as WSEvent;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+
+      if (isRecord(parsed) && typeof parsed.error === 'string') {
+        toast.error(parsed.error);
+        return;
+      }
+
+      if (!isWSEvent(parsed)) return;
+
+      const msg = parsed;
       // console.log("WS Event:", msg); // Comment out to reduce noise
       
       // Dispatch to listeners
@@ -115,6 +136,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
              break;
         case 'message.reaction':
              // This will be handled in the Chat component via listeners
+             break;
+        case 'call.error':
+             toast.error(typeof data?.message === 'string' ? data.message : 'Call failed');
              break;
       }
     };
