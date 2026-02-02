@@ -1,8 +1,10 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuth } from './context/AuthContext';
 import { ChatProvider } from './context/ChatContext';
+import { CallProvider } from './context/CallContext';
+import { useThemeStore } from './store/themeStore';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Chat from './pages/Chat';
@@ -17,12 +19,20 @@ const ProtectedRoute = ({ children }: { children: ReactElement }) => {
   
   return (
     <ChatProvider>
-      {children}
+      <CallProvider>
+        {children}
+      </CallProvider>
     </ChatProvider>
   );
 };
 
 function App() {
+  const { isDarkMode } = useThemeStore();
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDarkMode);
+  }, [isDarkMode]);
+
   return (
     <>
       <Toaster position="top-right" />

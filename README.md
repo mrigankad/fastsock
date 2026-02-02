@@ -105,6 +105,45 @@ Open http://localhost:8000/docs to see the Swagger UI.
 }
 ```
 
+## Video Calling (WebRTC)
+
+FastSock supports 1:1 WebRTC video calling using the existing authenticated WebSocket as the signaling channel.
+
+### ICE Servers
+
+Frontend fetches ICE server configuration from:
+
+`GET /api/v1/webrtc/ice-servers` (requires Bearer token)
+
+Configure servers via `.env`:
+
+`WEBRTC_ICE_SERVERS_JSON=[{"urls":["stun:stun.l.google.com:19302"]},{"urls":["turn:your-turn-host:3478"],"username":"user","credential":"pass"}]`
+
+### Signaling Events (WebSocket)
+
+All call events use `event` names prefixed with `call.` and JSON payloads under `data`:
+
+- `call.invite` `{ call_id, to_user_id, room_id?, sdp_offer }`
+- `call.accept` `{ call_id, to_user_id, sdp_answer }`
+- `call.ice` `{ call_id, to_user_id, candidate }`
+- `call.reject` / `call.hangup` / `call.busy` `{ call_id, to_user_id }`
+
+### Manual Test Checklist
+
+- Same browser profile (two users) in two windows: invite → accept → hangup
+- Different networks (Wi-Fi vs hotspot): verify media connects; add TURN if it fails
+- Permission denied (camera/mic blocked): ensure UI fails gracefully
+- Busy handling: start a call, then receive a second invite
+- Refresh during ringing and during an active call: ensure cleanup and hangup works
+
+### Scaling to Group Calls (SFU Path)
+
+1:1 calls can work peer-to-peer, but group calls typically need an SFU to avoid N² bandwidth.
+
+- Keep FastSock WebSocket for call control (join/leave/mute/raise-hand) and authentication.
+- Use an SFU (e.g., LiveKit, Janus, mediasoup) for media routing.
+- Replace `call.invite/accept/ice` peer signaling with “create room” + “join token” flows handled by the SFU.
+
 ## Testing
 
 Run the test suite (requires `pytest`):

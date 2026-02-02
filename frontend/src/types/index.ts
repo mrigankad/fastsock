@@ -15,6 +15,8 @@ export interface Message {
   is_read: boolean;
   message_type: 'text' | 'image' | 'file';
   status?: 'sent' | 'delivered' | 'read';
+  reactions?: Record<string, string[]>; // emoji -> userIds
+  reply_to?: number; // message id this is replying to
 }
 
 export interface ChatRoom {

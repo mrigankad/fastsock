@@ -4,12 +4,16 @@ from sqlalchemy import update, select
 from sqlalchemy.orm import selectinload
 from app.api import deps
 from app.ws.manager import manager
-from app.schemas.ws_events import WSEvent, WSMessagePayload
+from app.schemas.ws_events import WSEvent
 from app.models.message import Message, MessageType
-from app.models.chat import ChatRoom, ChatRoomMember
+from app.models.chat import ChatRoom
+from app.models.call import CallSession
+from app.services.calls import can_initiate_call
 from app.db.session import AsyncSessionLocal
 import json
 from datetime import datetime
+from uuid import uuid4
+from collections import deque
 
 router = APIRouter()
 
@@ -23,10 +27,14 @@ async def websocket_endpoint(
         return
 
     await manager.connect(websocket, current_user.id)
+    invite_timestamps = deque()
     
     try:
         while True:
             data = await websocket.receive_text()
+            if len(data) > 200_000:
+                await websocket.close(code=1009)
+                return
             
             try:
                 event_data = json.loads(data)
@@ -171,8 +179,87 @@ async def websocket_endpoint(
                      )
                      await manager.broadcast(typing_event)
 
+            elif event.event.startswith("call."):
+                payload = event.data if isinstance(event.data, dict) else None
+                if not payload:
+                    await websocket.send_json({"error": "Invalid call payload"})
+                    continue
+
+                async with AsyncSessionLocal() as db:
+                    if event.event == "call.invite":
+                        target_user_id = payload.get("to_user_id") or payload.get("receiver_id") or payload.get("peer_user_id")
+                        if not target_user_id:
+                            await websocket.send_json({"error": "Missing call recipient"})
+                            continue
+
+                        now = datetime.utcnow()
+                        recent = [t for t in invite_timestamps if (now - t).total_seconds() < 30]
+                        recent.append(now)
+                        invite_timestamps = deque(recent)
+                        if len(invite_timestamps) > 3:
+                            await websocket.send_json({"error": "Too many call invites"})
+                            continue
+
+                        room_id = payload.get("room_id")
+                        allowed = await can_initiate_call(db, current_user.id, target_user_id, room_id)
+                        if not allowed:
+                            await websocket.send_json({"error": "Not allowed to call this user"})
+                            continue
+
+                        call_id = payload.get("call_id") or str(uuid4())
+                        existing_call = await db.get(CallSession, call_id)
+                        if existing_call is not None:
+                            await websocket.send_json({"error": "Call already exists"})
+                            continue
+
+                        call = CallSession(
+                            call_id=call_id,
+                            room_id=room_id,
+                            caller_id=current_user.id,
+                            callee_id=target_user_id,
+                            status="ringing",
+                        )
+                        db.add(call)
+                        await db.commit()
+
+                        recipient_ids = [target_user_id]
+                        outgoing_payload = {**payload, "call_id": call_id}
+                    else:
+                        call_id = payload.get("call_id")
+                        if not call_id:
+                            await websocket.send_json({"error": "Missing call_id"})
+                            continue
+
+                        call = await db.get(CallSession, call_id)
+                        if call is None:
+                            await websocket.send_json({"error": "Unknown call"})
+                            continue
+
+                        if current_user.id not in {call.caller_id, call.callee_id}:
+                            await websocket.send_json({"error": "Not authorized for this call"})
+                            continue
+
+                        other_user_id = call.callee_id if current_user.id == call.caller_id else call.caller_id
+                        recipient_ids = [other_user_id]
+                        outgoing_payload = payload
+
+                        if event.event == "call.accept":
+                            call.status = "active"
+                            call.started_at = datetime.utcnow()
+                            await db.commit()
+                        elif event.event in {"call.reject", "call.hangup", "call.busy"}:
+                            call.status = "rejected" if event.event == "call.reject" else ("busy" if event.event == "call.busy" else "ended")
+                            call.ended_at = datetime.utcnow()
+                            await db.commit()
+
+                outgoing_event = WSEvent(
+                    event=event.event,
+                    data={**outgoing_payload, "from_user_id": current_user.id},
+                    recipient_ids=recipient_ids,
+                )
+                await manager.broadcast(outgoing_event)
+
     except WebSocketDisconnect:
         await manager.disconnect(current_user.id)
     except Exception as e:
-        print(f"Error: {e}")
         await manager.disconnect(current_user.id)

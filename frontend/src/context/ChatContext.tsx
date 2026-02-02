@@ -113,6 +113,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         case 'message.read_receipt':
              // These are handled in the Chat component via listeners
              break;
+        case 'message.reaction':
+             // This will be handled in the Chat component via listeners
+             break;
       }
     };
 

@@ -75,3 +75,19 @@ async def test_chat_rooms(client: AsyncClient):
     rooms = list_res.json()
     assert len(rooms) >= 1
     assert any(r["id"] == room_data["id"] for r in rooms)
+
+
+@pytest.mark.anyio
+async def test_webrtc_ice_servers_requires_auth(client: AsyncClient):
+    import time
+    email = f"webrtc_{time.time()}@example.com"
+    await client.post("/api/v1/auth/signup", json={"email": email, "password": "pw", "full_name": "WebRTC User"})
+    login_res = await client.post("/api/v1/auth/login/access-token", data={"username": email, "password": "pw"})
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    res = await client.get("/api/v1/webrtc/ice-servers", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert "ice_servers" in data
+    assert isinstance(data["ice_servers"], list)

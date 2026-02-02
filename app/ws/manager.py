@@ -43,27 +43,21 @@ class ConnectionManager:
 
     async def local_broadcast(self, data: str):
         event = WSEvent.model_validate_json(data)
+
+        if event.recipient_ids:
+            for uid in event.recipient_ids:
+                if uid in self.active_connections:
+                    try:
+                        await self.active_connections[uid].send_text(data)
+                    except Exception:
+                        pass
+            return
         
         # If it's a direct message/typing/read-receipt/update/delete, check if recipient is local
         if event.event in ["message.receive", "typing.start", "typing.stop", "message.read_receipt", "message.update", "message.delete", "room.created"]:
             receiver_id = event.data.get("receiver_id")
             room_id = event.data.get("room_id")
             
-            # Privacy Check: If recipient_ids are specified, ONLY send to those users
-            if event.recipient_ids:
-                for uid in event.recipient_ids:
-                    if uid in self.active_connections:
-                        try:
-                            # Strip recipient_ids before sending to avoid leaking member list? 
-                            # For simplicity we send as is, client ignores extra fields.
-                            # To be strict, we would need to clone and strip.
-                            # But since we are inside the loop, stripping once is hard.
-                            # Let's rely on client ignoring it.
-                            await self.active_connections[uid].send_text(data)
-                        except Exception:
-                            pass
-                return
-
             # If room_id exists, broadcast to all active connections (simple approach for now)
             # Ideal: broadcast only to room members
             if room_id:

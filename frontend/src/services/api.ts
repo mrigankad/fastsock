@@ -36,6 +36,7 @@ export const chatApi = {
   getUnreadCounts: () => api.get<UnreadCounts>('/chat/unread'),
   getHistory: (type: 'user' | 'room', id: number, skip=0, limit=50) => 
     api.get<Message[]>(`/chat/history/${type}/${id}?skip=${skip}&limit=${limit}`),
+  getIceServers: () => api.get<{ ice_servers: RTCIceServer[] }>('/webrtc/ice-servers'),
   uploadFile: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
