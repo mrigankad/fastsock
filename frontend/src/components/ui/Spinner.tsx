@@ -1,5 +1,5 @@
 import React from 'react';
-import { cn } from '../utils/cn';
+import { cn } from '../../utils/cn';
 
 export type SpinnerProps = {
   size?: 'sm' | 'md' | 'lg';
@@ -30,4 +30,3 @@ export const Spinner: React.FC<SpinnerProps> = ({
     />
   );
 };
-

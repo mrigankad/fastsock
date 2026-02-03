@@ -38,7 +38,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   redis:
-    image: redis:7-alpine
+    image: valkey/valkey:latest
     container_name: fastsock_redis
     restart: always
 

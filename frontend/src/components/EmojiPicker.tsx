@@ -1,6 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import EmojiPicker, { Theme, type EmojiClickData } from 'emoji-picker-react';
 import { Smile } from 'lucide-react';
+import { Popover } from './ui/Popover';
+import { useThemeStore } from '../store/themeStore';
 
 interface EmojiPickerButtonProps {
   onEmojiSelect: (emoji: string) => void;
@@ -8,45 +10,37 @@ interface EmojiPickerButtonProps {
 }
 
 export const EmojiPickerButton: React.FC<EmojiPickerButtonProps> = ({ onEmojiSelect, className = '' }) => {
-  const [showPicker, setShowPicker] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
-        setShowPicker(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const [open, setOpen] = useState(false);
+  const { isDarkMode } = useThemeStore();
 
   const handleEmojiClick = (emojiData: EmojiClickData) => {
     onEmojiSelect(emojiData.emoji);
-    setShowPicker(false);
+    setOpen(false);
   };
 
   return (
-    <div className="relative" ref={pickerRef}>
-      <button
-        type="button"
-        onClick={() => setShowPicker(!showPicker)}
-        className={`p-2 text-gray-400 hover:text-gray-600 transition-colors ${className}`}
-      >
-        <Smile size={20} />
-      </button>
-      
-      {showPicker && (
-        <div className="absolute bottom-full left-0 mb-2 z-50">
-          <EmojiPicker
-            onEmojiClick={handleEmojiClick}
-            width={300}
-            height={400}
-            theme={Theme.LIGHT}
-          />
-        </div>
-      )}
-    </div>
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      side="top"
+      align="start"
+      contentClassName="p-0 border-none shadow-none bg-transparent w-auto"
+      trigger={
+        <button
+          type="button"
+          className={`p-2 text-gray-400 hover:text-gray-600 transition-colors ${className}`}
+        >
+          <Smile size={20} />
+        </button>
+      }
+      content={
+        <EmojiPicker
+          onEmojiClick={handleEmojiClick}
+          width={300}
+          height={400}
+          theme={isDarkMode ? Theme.DARK : Theme.LIGHT}
+        />
+      }
+    />
   );
 };

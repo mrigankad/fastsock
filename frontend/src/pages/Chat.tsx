@@ -1,33 +1,26 @@
-import React, { useCallback, useEffect, useState, useRef, type ChangeEvent, type MouseEvent } from 'react';
+import React, { useCallback, useEffect, useState, useRef, type ChangeEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { useCall } from '../context/CallContext';
 import { useThemeStore } from '../store/themeStore';
+import { useUiStore } from '../store/ui.store';
 import { chatApi } from '../services/api';
 import { LogOut, Users, MessageSquare, Plus, Paperclip, Send, X, Edit2, Trash2, Search, Moon, Sun, Video, Reply, ChevronDown, Menu } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 import type { User, ChatRoom, Message, UnreadCounts } from '../types';
-import { Skeleton } from '../components/Skeleton';
+import { Skeleton } from '../components/ui';
 import { EmojiPickerButton } from '../components/EmojiPicker';
 import { MessageReactions } from '../components/MessageReactions';
 import { CallOverlay } from '../components/CallOverlay';
 import { formatMessage } from '../utils/messageFormatter';
-import { Button, Input, Modal } from '../design-system';
+import { Button, Input, Modal, Tabs, TabsList, TabsTrigger, Avatar, ScrollArea, Tooltip, ContextMenuRoot, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, Checkbox } from '../components/ui';
 import toast from 'react-hot-toast';
+import { cn } from '../utils/cn';
 
 interface ChatInfo {
   type: 'user' | 'room';
   id: number;
   name: string;
-}
-
-interface ContextMenuState {
-  id: number;
-  x: number;
-  y: number;
-  isMe: boolean;
-  content: string;
-  type: 'text' | 'image' | 'file';
 }
 
 interface ReplyToMessage {
@@ -41,8 +34,10 @@ const Chat: React.FC = () => {
   const { isConnected, send, subscribe, onlineUsers, typingUsers } = useChat();
   const { startCall, status: callStatus } = useCall();
   const { isDarkMode, toggleDarkMode } = useThemeStore();
+  const { isCreateRoomModalOpen, setCreateRoomModalOpen } = useUiStore();
   const currentUserId = user?.id;
   
+  const [userSearch, setUserSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'users' | 'rooms'>('users');
   const [users, setUsers] = useState<User[]>([]);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
@@ -50,11 +45,9 @@ const Chat: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>({ users: {}, rooms: {} });
-  const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
   const [previewFile, setPreviewFile] = useState<File | null>(null);
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [editingMessage, setEditingMessage] = useState<{ id: number, content: string } | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -66,6 +59,7 @@ const Chat: React.FC = () => {
   const [replyToMessage, setReplyToMessage] = useState<ReplyToMessage | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [localTypingUsers, setLocalTypingUsers] = useState<Set<string>>(new Set());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -108,8 +102,6 @@ const Chat: React.FC = () => {
         loadUnread();
     }
   }, [user, loadRooms, loadUnread, loadUsers]);
-
-  // ... (handleIncomingMessage, updateMessageStatus) ...
 
   // Subscribe to WS events
   useEffect(() => {
@@ -158,6 +150,36 @@ const Chat: React.FC = () => {
                     });
                 }
             }
+        } else if (event.event === 'typing.start') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const data = event.data as any;
+            if (currentChat) {
+                const isForCurrentRoom = currentChat.type === 'room' && data.room_id === currentChat.id;
+                const isForCurrentUser = currentChat.type === 'user' && !data.room_id && data.sender_id === currentChat.id;
+                
+                if (isForCurrentRoom || isForCurrentUser) {
+                     setLocalTypingUsers(prev => {
+                         const next = new Set(prev);
+                         next.add(data.sender_id.toString());
+                         return next;
+                     });
+                }
+            }
+        } else if (event.event === 'typing.stop') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const data = event.data as any;
+            if (currentChat) {
+                const isForCurrentRoom = currentChat.type === 'room' && data.room_id === currentChat.id;
+                const isForCurrentUser = currentChat.type === 'user' && !data.room_id && data.sender_id === currentChat.id;
+
+                if (isForCurrentRoom || isForCurrentUser) {
+                     setLocalTypingUsers(prev => {
+                         const next = new Set(prev);
+                         next.delete(data.sender_id.toString());
+                         return next;
+                     });
+                }
+            }
         } else if (event.event === 'room.created') {
             const newRoom = event.data as ChatRoom;
             setRooms(prev => [newRoom, ...prev]);
@@ -203,8 +225,7 @@ const Chat: React.FC = () => {
     return () => unsubscribe();
   }, [currentChat, currentUserId, subscribe, send, user]);
 
-  // Scroll to bottom on new messages (ONLY if we are near bottom or it's initial load)
-  // For simplicity, let's auto-scroll only if we are not loading more history
+  // Scroll to bottom on new messages
   useEffect(() => {
     if (!isLoadingMore) {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -229,6 +250,7 @@ const Chat: React.FC = () => {
     setHasMore(true);
     setIsLoadingMore(false);
     setIsHistoryLoading(true);
+    setLocalTypingUsers(new Set());
     
     // Clear unread
     if (type === 'user') {
@@ -237,6 +259,8 @@ const Chat: React.FC = () => {
             delete newCounts.users[item.id];
             return newCounts;
         });
+        // Notify backend that we read the user messages
+        send('message.read', { sender_id: item.id });
     } else {
         setUnreadCounts(prev => {
             const newCounts = { ...prev };
@@ -271,7 +295,6 @@ const Chat: React.FC = () => {
             setMessages(prev => [...data, ...prev]);
             
             // Adjust scroll position to maintain view
-            // We use setTimeout to allow render to happen
             setTimeout(() => {
                 if (scrollContainerRef.current) {
                     const newHeight = scrollContainerRef.current.scrollHeight;
@@ -288,8 +311,6 @@ const Chat: React.FC = () => {
       }
     }
   };
-
-  // ... (handleSendMessage, handleTyping, handleContextMenu, handleEdit, handleDelete, cancelEdit, handleCreateRoom, handleFileSelect) ...
 
   const handleSendMessage = async () => {
     if ((!inputText.trim() && !previewFile) || !currentChat) return;
@@ -353,28 +374,17 @@ const Chat: React.FC = () => {
     }
   };
 
-  const handleContextMenu = (e: MouseEvent, msg: Message) => {
-    if (currentUserId != null && msg.sender_id === currentUserId) {
-        e.preventDefault();
-        setContextMenu({ id: msg.id, x: e.clientX, y: e.clientY, isMe: true, content: msg.content, type: msg.message_type });
+  const handleEditMessage = (msg: Message) => {
+    if (msg.message_type === 'text') {
+      setEditingMessage({ id: msg.id, content: msg.content });
+      setInputText(msg.content);
+      document.getElementById('message-input')?.focus();
     }
   };
 
-  const handleEdit = () => {
-    if (contextMenu && contextMenu.type === 'text') {
-        setEditingMessage({ id: contextMenu.id, content: contextMenu.content });
-        setInputText(contextMenu.content);
-        setContextMenu(null);
-        document.getElementById('message-input')?.focus();
-    }
-  };
-
-  const handleDelete = async () => {
-    if (contextMenu) {
-        if (confirm("Delete this message?")) {
-            await chatApi.deleteMessage(contextMenu.id);
-        }
-        setContextMenu(null);
+  const handleDeleteMessage = async (id: number) => {
+    if (confirm('Delete this message?')) {
+      await chatApi.deleteMessage(id);
     }
   };
 
@@ -388,7 +398,7 @@ const Chat: React.FC = () => {
     await chatApi.createRoom(newRoomName, selectedMembers);
     setNewRoomName('');
     setSelectedMembers([]);
-    setIsRoomModalOpen(false);
+    setCreateRoomModalOpen(false);
     loadRooms();
   };
 
@@ -411,12 +421,14 @@ const Chat: React.FC = () => {
         const userReactions = reactions[emoji] || [];
         const userIdStr = currentUserId?.toString() || '';
 
-        if (userReactions.includes(userIdStr)) {
+        const hasReacted = userReactions.some(id => id.toString() === userIdStr);
+
+        if (hasReacted) {
           return {
             ...msg,
             reactions: {
               ...reactions,
-              [emoji]: userReactions.filter(id => id !== userIdStr)
+              [emoji]: userReactions.filter(id => id.toString() !== userIdStr)
             }
           };
         }
@@ -468,71 +480,85 @@ const Chat: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  if (!user) return <div>Loading...</div>;
+  if (!user) return <div className="h-screen flex items-center justify-center">Loading...</div>;
 
   return (
-    <div className={`flex h-screen overflow-hidden ${isDarkMode ? 'bg-gray-900' : 'bg-gray-100'}`} onClick={() => setContextMenu(null)}>
+    <div className={cn("flex h-screen overflow-hidden", isDarkMode ? 'bg-neutral-950' : 'bg-neutral-100')}>
       <CallOverlay />
+      
       {/* Sidebar */}
-      <div className={`${isSidebarOpen ? 'flex' : 'hidden'} md:flex w-80 border-r flex-col ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+      <div className={cn(
+        "md:flex w-full md:w-80 border-r flex-col transition-all duration-300",
+        isSidebarOpen ? 'flex' : 'hidden',
+        isDarkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'
+      )}>
         {/* Header */}
-        <div className={`p-4 border-b flex justify-between items-center ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
-          <div className="flex items-center space-x-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${isDarkMode ? 'bg-blue-600' : 'bg-blue-500'}`}>
-              {user.full_name?.[0] || user.email[0].toUpperCase()}
-            </div>
-            <div>
-                <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{user.full_name || user.email}</p>
-                <div className={`flex items-center text-xs ${isConnected ? 'text-green-500' : 'text-red-500'}`}>
-                    <div className={`w-2 h-2 rounded-full mr-1 ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+        <div className={cn("p-4 border-b flex justify-between items-center h-16 shrink-0", 
+            isDarkMode ? 'border-neutral-800' : 'border-neutral-200'
+        )}>
+          <div className="flex items-center space-x-3 overflow-hidden">
+            <Avatar
+              fallback={user.full_name?.[0] || user.email[0].toUpperCase()}
+              className="bg-brand-primary text-white"
+            />
+            <div className="min-w-0">
+                <p className={cn("font-semibold truncate", isDarkMode ? 'text-white' : 'text-neutral-900')}>
+                    {user.full_name || user.email}
+                </p>
+                <div className={cn("flex items-center text-xs", isConnected ? 'text-green-500' : 'text-red-500')}>
+                    <div className={cn("w-2 h-2 rounded-full mr-1", isConnected ? 'bg-green-500' : 'bg-red-500')}></div>
                     {isConnected ? 'Online' : 'Offline'}
                 </div>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <button 
-              onClick={toggleDarkMode} 
-              className={`p-2 rounded-full transition-colors ${
-                isDarkMode ? 'text-yellow-400 hover:bg-gray-700' : 'text-gray-400 hover:bg-gray-100'
-              }`}
-              title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-            </button>
-            <button onClick={logout} className="text-gray-400 hover:text-red-500">
-              <LogOut size={20} />
-            </button>
+          <div className="flex items-center space-x-1">
+            <Tooltip content={isDarkMode ? 'Light Mode' : 'Dark Mode'}>
+                <Button 
+                  variant="icon" 
+                  size="sm"
+                  onClick={toggleDarkMode} 
+                  className={isDarkMode ? 'text-yellow-400' : 'text-neutral-500'}
+                >
+                  {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+                </Button>
+            </Tooltip>
+            <Tooltip content="Logout">
+                <Button variant="icon" size="sm" onClick={logout} className="text-neutral-500 hover:text-red-500">
+                  <LogOut size={18} />
+                </Button>
+            </Tooltip>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className={`flex border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-          <button 
-            onClick={() => setActiveTab('users')}
-            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'users' 
-                ? `${isDarkMode ? 'text-blue-400 border-blue-400' : 'text-blue-600 border-blue-600'} border-b-2` 
-                : `${isDarkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700'}`
-            }`}
-          >
-            Direct Messages
-          </button>
-          <button 
-            onClick={() => setActiveTab('rooms')}
-            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'rooms' 
-                ? `${isDarkMode ? 'text-blue-400 border-blue-400' : 'text-blue-600 border-blue-600'} border-b-2` 
-                : `${isDarkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700'}`
-            }`}
-          >
-            Rooms
-          </button>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'users' | 'rooms')} className="w-full">
+          <TabsList className="w-full">
+            <TabsTrigger value="users">Direct Messages</TabsTrigger>
+            <TabsTrigger value="rooms">Rooms</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="px-4 py-2">
+            <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"/>
+                <input
+                    type="text"
+                    placeholder={activeTab === 'users' ? "Search users..." : "Search rooms..."}
+                    className={cn(
+                        "w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all",
+                        isDarkMode 
+                            ? 'bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500' 
+                            : 'bg-neutral-100 border-transparent text-neutral-900'
+                    )}
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                />
+            </div>
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto">
+        <ScrollArea className="flex-1">
           {activeTab === 'users' ? (
-            <div className="divide-y divide-gray-100">
+            <div className="p-2 space-y-1">
               {isUsersLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                       <div key={i} className="p-3 flex items-center">
@@ -544,53 +570,59 @@ const Chat: React.FC = () => {
                       </div>
                   ))
               ) : (
-                  users.map(u => (
+                  users
+                    .filter(u => {
+                        if (!userSearch) return true;
+                        const term = userSearch.toLowerCase();
+                        return (u.full_name || '').toLowerCase().includes(term) || u.email.toLowerCase().includes(term);
+                    })
+                    .map(u => (
                 <div 
                     key={u.id} 
                     onClick={() => selectChat('user', u)}
-                    className={`p-3 flex items-center cursor-pointer transition-colors ${
-                      currentChat?.id === u.id && currentChat?.type === 'user' 
-                        ? (isDarkMode ? 'bg-blue-900' : 'bg-blue-50')
-                        : (isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50')
-                    }`}
+                    className={cn(
+                        "p-3 flex items-center cursor-pointer rounded-lg transition-all",
+                        currentChat?.id === u.id && currentChat?.type === 'user' 
+                        ? (isDarkMode ? 'bg-neutral-800' : 'bg-neutral-100')
+                        : (isDarkMode ? 'hover:bg-neutral-800/50' : 'hover:bg-neutral-50')
+                    )}
                 >
                   <div className="relative">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium ${
-                      isDarkMode ? 'bg-gray-600' : 'bg-gray-300'
-                    }`}>
-                      {u.full_name?.[0] || u.email[0].toUpperCase()}
-                    </div>
+                    <Avatar
+                      fallback={u.full_name?.[0] || u.email[0].toUpperCase()}
+                      className={cn(isDarkMode ? 'bg-neutral-700 text-neutral-200' : 'bg-neutral-200 text-neutral-600')}
+                    />
                     {onlineUsers[u.id] && (
-                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-neutral-900 rounded-full"></div>
                     )}
                   </div>
-                  <div className="ml-3 flex-1">
+                  <div className="ml-3 flex-1 min-w-0">
                     <div className="flex justify-between items-center">
-                        <p className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                        <p className={cn("text-sm font-medium truncate", isDarkMode ? 'text-neutral-200' : 'text-neutral-900')}>
                           {u.full_name || u.email}
                         </p>
                         {unreadCounts.users[u.id] > 0 && (
-                            <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                            <span className="bg-brand-primary text-white text-xs font-bold px-2 py-0.5 rounded-full">
                                 {unreadCounts.users[u.id]}
                             </span>
                         )}
                     </div>
+                    {typingUsers[u.id] && (
+                        <p className="text-xs text-brand-primary animate-pulse">typing...</p>
+                    )}
                   </div>
                 </div>
               )))}
             </div>
           ) : (
-            <div className="p-2">
-                <button 
-                    onClick={() => setIsRoomModalOpen(true)}
-                    className={`w-full flex items-center justify-center space-x-2 py-2 rounded-md transition ${
-                      isDarkMode 
-                        ? 'bg-blue-900 text-blue-300 hover:bg-blue-800' 
-                        : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
-                    } mb-2`}
+            <div className="p-2 space-y-2">
+                <Button 
+                    onClick={() => setCreateRoomModalOpen(true)}
+                    className="w-full"
+                    variant="secondary"
                 >
                     <Plus size={16} /> <span>Create Room</span>
-                </button>
+                </Button>
                 <div className="space-y-1">
                     {isRoomsLoading ? (
                         Array.from({ length: 3 }).map((_, i) => (
@@ -602,94 +634,131 @@ const Chat: React.FC = () => {
                             </div>
                         ))
                     ) : (
-                        rooms.map(r => (
+                        rooms
+                        .filter(r => {
+                            if (!userSearch) return true;
+                            return r.name.toLowerCase().includes(userSearch.toLowerCase());
+                        })
+                        .map(r => (
                         <div 
                             key={r.id}
                             onClick={() => selectChat('room', r)}
-                            className={`p-3 flex items-center cursor-pointer rounded-md transition-colors ${
-                              currentChat?.id === r.id && currentChat?.type === 'room' 
-                                ? (isDarkMode ? 'bg-blue-900' : 'bg-blue-50')
-                                : (isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100')
-                            }`}
+                            className={cn(
+                                "p-3 flex items-center cursor-pointer rounded-lg transition-all",
+                                currentChat?.id === r.id && currentChat?.type === 'room' 
+                                ? (isDarkMode ? 'bg-neutral-800' : 'bg-neutral-100')
+                                : (isDarkMode ? 'hover:bg-neutral-800/50' : 'hover:bg-neutral-50')
+                            )}
                         >
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center relative ${
-                              isDarkMode ? 'bg-indigo-900 text-indigo-300' : 'bg-indigo-100 text-indigo-600'
-                            }`}>
-                                <Users size={20} />
+                            <div className="relative">
+                                <Avatar
+                                    fallback={<Users size={18} />}
+                                    className={cn(isDarkMode ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-100 text-indigo-600')}
+                                />
                                 {unreadCounts.rooms[r.id] > 0 && (
-                                    <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full border-2 border-white">
+                                    <div className="absolute -top-1 -right-1 bg-brand-primary text-white text-xs font-bold px-1.5 py-0.5 rounded-full border-2 border-white dark:border-neutral-900 z-10">
                                         {unreadCounts.rooms[r.id]}
                                     </div>
                                 )}
                             </div>
-                            <p className={`ml-3 text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{r.name}</p>
+                            <p className={cn("ml-3 text-sm font-medium truncate", isDarkMode ? 'text-neutral-200' : 'text-neutral-900')}>
+                                {r.name}
+                            </p>
                         </div>
                     )))}
                 </div>
             </div>
           )}
-        </div>
+        </ScrollArea>
       </div>
 
       {/* Chat Area */}
-      <div className={`${isSidebarOpen ? 'hidden' : 'flex'} md:flex flex-1 flex-col relative ${isDarkMode ? 'bg-gray-800' : 'bg-[#e5ddd5]'}`}>
+      <div className={cn(
+          "flex-1 flex-col relative transition-all duration-300",
+          isSidebarOpen ? 'hidden md:flex' : 'flex',
+          isDarkMode ? 'bg-neutral-950' : 'bg-neutral-50/50'
+      )}>
         {currentChat ? (
             <>
                 {/* Header */}
-                <div className={`p-4 border-b flex justify-between items-center shadow-sm z-10 ${
-                  isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'
-                }`}>
+                <div className={cn(
+                    "px-4 h-16 border-b flex justify-between items-center shadow-sm z-10 shrink-0",
+                    isDarkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'
+                )}>
                     <div className="flex items-center">
-                        <button
-                          type="button"
-                          className={`mr-2 p-2 rounded-full md:hidden ${isDarkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'}`}
+                        <Button
+                          variant="icon"
+                          className="mr-2 md:hidden"
                           onClick={() => setIsSidebarOpen(true)}
                           aria-label="Open chats"
                         >
-                          <Menu size={18} />
-                        </button>
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold mr-3 ${
-                          currentChat.type === 'room' 
-                            ? (isDarkMode ? 'bg-indigo-600' : 'bg-indigo-500')
-                            : (isDarkMode ? 'bg-blue-600' : 'bg-blue-500')
-                        }`}>
-                            {currentChat.name[0].toUpperCase()}
-                        </div>
+                          <Menu size={20} />
+                        </Button>
+                        <Avatar
+                          fallback={currentChat.name[0].toUpperCase()}
+                          className={cn(
+                            "mr-3",
+                            currentChat.type === 'room' 
+                              ? 'bg-indigo-500 text-white' 
+                              : 'bg-brand-primary text-white'
+                          )}
+                        />
                         <div>
-                            <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{currentChat.name}</h3>
-                            {currentChat.type === 'user' && typingUsers[currentChat.id] && (
-                                <p className="text-xs text-blue-600 font-medium animate-pulse">typing...</p>
+                            <h3 className={cn("font-bold text-sm", isDarkMode ? 'text-white' : 'text-neutral-900')}>
+                                {currentChat.name}
+                            </h3>
+                            {localTypingUsers.size > 0 ? (
+                                <p className="text-xs text-brand-primary font-medium animate-pulse">
+                                    {(() => {
+                                        const ids = Array.from(localTypingUsers);
+                                        const names = ids.map(id => {
+                                            const u = users.find(user => user.id.toString() === id);
+                                            return u?.full_name?.split(' ')[0] || u?.email?.split('@')[0] || 'User';
+                                        });
+                                        if (names.length === 1) return `${names[0]} is typing...`;
+                                        if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`;
+                                        return `${names.length} people are typing...`;
+                                    })()}
+                                </p>
+                            ) : (
+                                <p className={cn("text-xs", isDarkMode ? 'text-neutral-400' : 'text-neutral-500')}>
+                                    {currentChat.type === 'room' ? 'Room' : 'Direct Message'}
+                                </p>
                             )}
                         </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                        <div className="relative">
-                            <Search size={16} className={`absolute left-2 top-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`}/>
+                        <div className="relative hidden sm:block">
+                            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"/>
                             <input
                                 type="text"
                                 placeholder="Search messages..."
-                                className={`pl-8 pr-2 py-1.5 border rounded-full text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-48 ${
-                                  isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'
-                                }`}
+                                className={cn(
+                                    "pl-9 pr-4 py-1.5 border rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary w-48 transition-all",
+                                    isDarkMode 
+                                        ? 'bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500' 
+                                        : 'bg-neutral-100 border-transparent text-neutral-900'
+                                )}
                                 value={messageSearch}
                                 onChange={(e) => setMessageSearch(e.target.value)}
                             />
                         </div>
                         {currentChat.type === 'user' && (
-                          <Button
-                            variant="icon"
-                            size="sm"
-                            onClick={() => startCall(currentChat.id)}
-                            disabled={callStatus !== 'idle'}
-                            aria-label="Start video call"
-                          >
-                            <Video size={18} />
-                          </Button>
+                          <Tooltip content="Start Video Call">
+                              <Button
+                                variant="icon"
+                                onClick={() => startCall(currentChat.id)}
+                                disabled={callStatus !== 'idle'}
+                              >
+                                <Video size={20} />
+                              </Button>
+                          </Tooltip>
                         )}
                         {!isConnected && (
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                              isDarkMode ? 'bg-red-900 text-red-300' : 'bg-red-100 text-red-600'
-                            }`}>
+                            <span className={cn(
+                                "px-3 py-1 rounded-full text-xs font-bold",
+                                isDarkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-600'
+                            )}>
                                 Disconnected
                             </span>
                         )}
@@ -697,19 +766,28 @@ const Chat: React.FC = () => {
                 </div>
 
                 {/* Messages */}
-                <div 
-                    className={`flex-1 overflow-y-auto p-4 space-y-4 ${isDarkMode ? 'bg-gray-800' : 'bg-[#e5ddd5]'}`}
+                <ScrollArea 
+                    className={cn("flex-1", isDarkMode ? 'bg-neutral-950' : 'bg-[#e5ddd5]')}
+                    viewportClassName="p-4 space-y-6"
                     onScroll={handleScroll}
-                    ref={scrollContainerRef}
+                    viewportRef={scrollContainerRef}
                 >
-                    {isLoadingMore && <div className={`text-center text-xs py-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Loading more...</div>}
+                    {isLoadingMore && (
+                        <div className="flex justify-center py-4">
+                            <div className={cn("text-xs px-3 py-1 rounded-full", isDarkMode ? 'bg-neutral-800 text-neutral-400' : 'bg-white/80 text-neutral-500 shadow-sm')}>
+                                Loading history...
+                            </div>
+                        </div>
+                    )}
                     
                     {isHistoryLoading ? (
-                        Array.from({ length: 3 }).map((_, i) => (
-                            <div key={i} className={`flex ${i % 2 === 0 ? 'justify-end' : 'justify-start'}`}>
-                                <Skeleton className="h-12 w-1/3" />
-                            </div>
-                        ))
+                        <div className="space-y-6 p-4">
+                            {Array.from({ length: 3 }).map((_, i) => (
+                                <div key={i} className={`flex ${i % 2 === 0 ? 'justify-end' : 'justify-start'}`}>
+                                    <Skeleton className="h-16 w-64 rounded-2xl" />
+                                </div>
+                            ))}
+                        </div>
                     ) : (
                         messages
                         .filter(msg => {
@@ -719,33 +797,56 @@ const Chat: React.FC = () => {
                         })
                         .map((msg, idx) => {
                         const isMe = currentUserId != null && msg.sender_id === currentUserId;
+                        const showAvatar = !isMe && (idx === 0 || messages[idx - 1].sender_id !== msg.sender_id);
+                        
                         return (
-                            <div 
-                                key={idx} 
-                                className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
-                                onContextMenu={(e) => handleContextMenu(e, msg)}
-                            >
-                                <div className={`max-w-[70%] rounded-lg px-4 py-2 shadow-sm relative group ${
-                                  isMe 
-                                    ? (isDarkMode ? 'bg-blue-600' : 'bg-[#dcf8c6]')
-                                    : (isDarkMode ? 'bg-gray-700' : 'bg-white')
-                                }`}>
-                                    {/* Sender Name in Group */}
-                                    {!isMe && currentChat.type === 'room' && (
-                                        <p className="text-xs font-bold text-orange-600 mb-1">{getUserLabel(msg.sender_id)}</p>
+                            <React.Fragment key={idx}>
+                                {(idx === 0 || !isToday(new Date(msg.timestamp)) && isToday(new Date(messages[idx-1].timestamp)) === false && new Date(msg.timestamp).toDateString() !== new Date(messages[idx-1].timestamp).toDateString()) && (
+                                    <div className="flex justify-center my-4">
+                                        <span className={cn(
+                                            "text-[10px] font-medium px-2 py-1 rounded-full border opacity-70",
+                                            isDarkMode ? "bg-neutral-900 border-neutral-800 text-neutral-400" : "bg-neutral-100 border-neutral-200 text-neutral-500"
+                                        )}>
+                                            {format(new Date(msg.timestamp), isToday(new Date(msg.timestamp)) ? "'Today'" : isYesterday(new Date(msg.timestamp)) ? "'Yesterday'" : 'MMMM d, yyyy')}
+                                        </span>
+                                    </div>
+                                )}
+                                <div 
+                                    className={cn(
+                                        "flex group mb-1", 
+                                        isMe ? 'justify-end' : 'justify-start'
                                     )}
+                                >
+                                {!isMe && (
+                                    <div className="w-8 mr-2 flex-shrink-0 flex items-end">
+                                        {showAvatar && (
+                                            <Avatar 
+                                                className="w-8 h-8"
+                                                fallback={getUserLabel(msg.sender_id)[0].toUpperCase()} 
+                                            />
+                                        )}
+                                    </div>
+                                )}
+                                
+                                {isMe ? (
+                                  <ContextMenuRoot>
+                                    <ContextMenuTrigger asChild>
+                                      <div className={cn(
+                                        "max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 shadow-md relative text-sm",
+                                        isDarkMode 
+                                          ? 'bg-gradient-to-br from-brand-primary to-blue-600 text-white border border-brand-primary/20'
+                                          : 'bg-gradient-to-br from-brand-primary to-blue-500 text-white shadow-brand-primary/20'
+                                      )}>
                                     
                                     {/* Reply to message */}
                                     {msg.reply_to && (
-                                      <div className={`mb-2 p-2 rounded border-l-4 ${
-                                        isMe 
-                                          ? (isDarkMode ? 'bg-blue-700 border-blue-400' : 'bg-green-50 border-green-400')
-                                          : (isDarkMode ? 'bg-gray-600 border-gray-500' : 'bg-gray-50 border-gray-400')
-                                      }`}>
-                                        <p className="text-xs font-medium text-gray-600 mb-1">
+                                      <div className={cn(
+                                        "mb-2 p-2 rounded-lg border-l-4 bg-black/10 border-white/40"
+                                      )}>
+                                        <p className="text-xs font-bold opacity-90 mb-0.5">
                                           Replying to message
                                         </p>
-                                        <p className="text-xs line-clamp-2">
+                                        <p className="text-xs line-clamp-1 opacity-80">
                                           {messages.find(m => m.id === msg.reply_to)?.content || 'Original message'}
                                         </p>
                                       </div>
@@ -756,21 +857,114 @@ const Chat: React.FC = () => {
                                         <img 
                                             src={msg.content.startsWith('http') ? msg.content : `http://localhost:8000${msg.content}`} 
                                             alt="attachment" 
-                                            className="max-w-xs rounded cursor-pointer"
+                                            className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
                                             onClick={() => window.open(`http://localhost:8000${msg.content}`, '_blank')}
                                         />
                                     ) : (
                                         <div 
-                                          className={`text-sm ${
-                                            isDarkMode ? 'text-white' : 'text-gray-800'
-                                          }`}
+                                          className="break-words leading-relaxed"
                                           dangerouslySetInnerHTML={{ 
                                             __html: formatMessage(msg.content) 
                                           }}
                                         />
                                     )}
 
-                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="mt-1.5 -mr-1">
+                                      <MessageReactions
+                                        messageId={msg.id}
+                                        reactions={msg.reactions || {}}
+                                        currentUserId={currentUserId || 0}
+                                        onReaction={handleReaction}
+                                      />
+                                    </div>
+
+                                        {/* Meta */}
+                                    <div className="flex items-center justify-end space-x-1.5 mt-1 select-none">
+                                        <Tooltip content={format(new Date(msg.timestamp), 'PPpp')}>
+                                            <span className="text-[10px] opacity-80 font-medium">
+                                                {formatTimestamp(msg.timestamp)}
+                                            </span>
+                                        </Tooltip>
+                                        {isMe && (
+                                            <span className={cn("text-[10px]", (msg.status === 'read' || msg.is_read) ? 'text-sky-200 font-bold' : 'text-white/70')}>
+                                                {(msg.status === 'read' || msg.is_read || msg.status === 'delivered') ? '✓✓' : '✓'}
+                                            </span>
+                                        )}
+                                    </div>
+                                    
+                                        {/* Reply button */}
+                                    <Tooltip content="Reply">
+                                    <button
+                                      onClick={() => handleReply(msg)}
+                                      className={cn(
+                                          "absolute -top-2 -right-2 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-md",
+                                          isDarkMode ? 'bg-neutral-700 text-white' : 'bg-white text-neutral-600'
+                                      )}
+                                    >
+                                      <Reply size={12} />
+                                    </button>
+                                    </Tooltip>
+                                      </div>
+                                    </ContextMenuTrigger>
+                                    <ContextMenuContent className="w-40">
+                                      <ContextMenuItem
+                                        disabled={msg.message_type !== 'text'}
+                                        onSelect={() => handleEditMessage(msg)}
+                                      >
+                                        <Edit2 size={14} className="mr-2" /> Edit Message
+                                      </ContextMenuItem>
+                                      <ContextMenuItem
+                                        onSelect={() => handleDeleteMessage(msg.id)}
+                                        className="text-red-500 focus:text-red-500"
+                                      >
+                                        <Trash2 size={14} className="mr-2" /> Delete Message
+                                      </ContextMenuItem>
+                                    </ContextMenuContent>
+                                  </ContextMenuRoot>
+                                ) : (
+                                  <div className={cn(
+                                    "max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 shadow-sm relative text-sm group border",
+                                    isDarkMode 
+                                        ? 'bg-neutral-800 text-neutral-100 border-neutral-700' 
+                                        : 'bg-white text-neutral-900 border-neutral-100'
+                                  )}>
+                                    {/* Sender Name in Group */}
+                                    {!isMe && currentChat.type === 'room' && (
+                                        <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-1">{getUserLabel(msg.sender_id)}</p>
+                                    )}
+                                    
+                                    {/* Reply to message */}
+                                    {msg.reply_to && (
+                                      <div className={cn(
+                                        "mb-2 p-2 rounded-lg border-l-4 bg-neutral-100 dark:bg-neutral-900 border-neutral-300 dark:border-neutral-700"
+                                      )}>
+                                        <p className="text-xs font-bold opacity-75 mb-0.5">
+                                          Replying to message
+                                        </p>
+                                        <p className="text-xs line-clamp-1 opacity-70">
+                                          {messages.find(m => m.id === msg.reply_to)?.content || 'Original message'}
+                                        </p>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Content */}
+                                    {msg.message_type === 'image' || (typeof msg.content === 'string' && msg.content.startsWith('/static/')) ? (
+                                        <img 
+                                            src={msg.content.startsWith('http') ? msg.content : `http://localhost:8000${msg.content}`} 
+                                            alt="attachment" 
+                                            className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                                            onClick={() => window.open(`http://localhost:8000${msg.content}`, '_blank')}
+                                        />
+                                    ) : (
+                                        <div 
+                                          className="break-words leading-relaxed"
+                                          dangerouslySetInnerHTML={{ 
+                                            __html: formatMessage(msg.content) 
+                                          }}
+                                        />
+                                    )}
+
+                                    <div className="mt-1.5 -mr-1">
                                       <MessageReactions
                                         messageId={msg.id}
                                         reactions={msg.reactions || {}}
@@ -780,207 +974,232 @@ const Chat: React.FC = () => {
                                     </div>
 
                                     {/* Meta */}
-                                    <div className="flex items-center justify-end space-x-1 mt-1">
-                                        <span className={`text-[10px] ${isDarkMode ? 'text-gray-300' : 'text-gray-500'}`} title={format(new Date(msg.timestamp), 'PPpp')}>
-                                            {formatTimestamp(msg.timestamp)}
-                                        </span>
-                                        {isMe && (
-                                            <span className={`text-[10px] ${msg.is_read ? 'text-blue-500' : 'text-gray-500'}`}>
-                                                {msg.is_read ? '✓✓' : '✓'}
+                                    <div className="flex items-center justify-end space-x-1 mt-1 select-none">
+                                        <Tooltip content={format(new Date(msg.timestamp), 'PPpp')}>
+                                            <span className="text-[10px] opacity-60 font-medium">
+                                                {formatTimestamp(msg.timestamp)}
                                             </span>
-                                        )}
+                                        </Tooltip>
                                     </div>
                                     
                                     {/* Reply button */}
+                                    <Tooltip content="Reply">
                                     <button
                                       onClick={() => handleReply(msg)}
-                                      className={`absolute -top-2 -right-2 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity ${
-                                        isDarkMode ? 'bg-gray-600 text-white' : 'bg-white text-gray-600'
-                                      } shadow-md`}
-                                      title="Reply to message"
+                                      className={cn(
+                                          "absolute -top-2 -right-2 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-md",
+                                          isDarkMode ? 'bg-neutral-700 text-white' : 'bg-white text-neutral-600'
+                                      )}
                                     >
                                       <Reply size={12} />
                                     </button>
+                                    </Tooltip>
+                                  </div>
+                                )}
                                 </div>
-                            </div>
+                            </React.Fragment>
                         );
                     }))}
                     <div ref={messagesEndRef} />
-                </div>
+                </ScrollArea>
                 
                 {/* Scroll to bottom button */}
                 {showScrollButton && (
                   <button
                     onClick={scrollToBottom}
-                    className={`absolute bottom-20 right-4 p-2 rounded-full shadow-lg transition-all ${
-                      isDarkMode ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-white text-gray-600 hover:bg-gray-50'
-                    }`}
+                    className={cn(
+                        "absolute bottom-24 right-6 p-2 rounded-full shadow-lg transition-all z-20",
+                        isDarkMode ? 'bg-neutral-700 text-white hover:bg-neutral-600' : 'bg-white text-neutral-600 hover:bg-neutral-50'
+                    )}
                   >
                     <ChevronDown size={20} />
                   </button>
                 )}
 
-                {/* Input */}
-                <div className={`p-3 border-t ${isDarkMode ? 'bg-gray-900 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
+                {/* Input Area */}
+                <div className={cn(
+                    "p-4 shrink-0",
+                    isDarkMode ? 'bg-neutral-900' : 'bg-[#f0f2f5]'
+                )}>
                     {previewFile && (
-                        <div className={`mb-2 p-2 rounded-md border inline-flex items-center ${
-                          isDarkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'
-                        }`}>
-                            <span className={`text-xs truncate max-w-xs mr-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{previewFile.name}</span>
-                            <button onClick={() => setPreviewFile(null)} className="text-red-500 hover:text-red-700"><X size={14}/></button>
+                        <div className={cn(
+                            "mb-2 p-2 rounded-lg border inline-flex items-center shadow-sm animate-in slide-in-from-bottom-2",
+                            isDarkMode ? 'bg-neutral-800 border-neutral-700' : 'bg-white border-neutral-200'
+                        )}>
+                            <span className={cn("text-xs truncate max-w-xs mr-2 font-medium", isDarkMode ? 'text-neutral-300' : 'text-neutral-700')}>{previewFile.name}</span>
+                            <button onClick={() => setPreviewFile(null)} className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20"><X size={14}/></button>
                         </div>
                     )}
+                    
                     {editingMessage && (
-                        <div className={`mb-2 p-2 rounded-md border flex justify-between items-center ${
-                          isDarkMode ? 'bg-blue-900 border-blue-700' : 'bg-blue-50 border-blue-200'
-                        }`}>
+                        <div className={cn(
+                            "mb-2 p-3 rounded-lg border flex justify-between items-center shadow-sm animate-in slide-in-from-bottom-2",
+                            isDarkMode ? 'bg-blue-900/20 border-blue-800' : 'bg-blue-50 border-blue-100'
+                        )}>
                             <div className="flex items-center">
-                                <Edit2 size={14} className="text-blue-600 mr-2"/>
-                                <span className={`text-sm ${isDarkMode ? 'text-blue-300' : 'text-blue-800'}`}>Editing message...</span>
+                                <Edit2 size={14} className="text-brand-primary mr-2"/>
+                                <div>
+                                    <span className={cn("text-xs font-bold block", isDarkMode ? 'text-brand-primary' : 'text-brand-primary')}>Editing Message</span>
+                                </div>
                             </div>
-                            <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700"><X size={14}/></button>
+                            <button onClick={cancelEdit} className="text-neutral-500 hover:text-neutral-700 p-1"><X size={14}/></button>
                         </div>
                     )}
+                    
                     {replyToMessage && (
-                        <div className={`mb-2 p-2 rounded-md border flex justify-between items-center ${
-                          isDarkMode ? 'bg-gray-800 border-gray-600' : 'bg-gray-100 border-gray-300'
-                        }`}>
-                            <div className="flex items-center">
-                                <Reply size={14} className="text-gray-600 mr-2"/>
-                                <div>
-                                  <span className={`text-xs font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                        <div className={cn(
+                            "mb-2 p-3 rounded-lg border flex justify-between items-center shadow-sm animate-in slide-in-from-bottom-2 border-l-4 border-l-brand-primary",
+                            isDarkMode ? 'bg-neutral-800 border-y-neutral-700 border-r-neutral-700' : 'bg-white border-y-neutral-200 border-r-neutral-200'
+                        )}>
+                            <div className="flex items-center max-w-[90%]">
+                                <Reply size={14} className="text-brand-primary mr-3 shrink-0"/>
+                                <div className="min-w-0">
+                                  <span className={cn("text-xs font-bold block", isDarkMode ? 'text-brand-primary' : 'text-brand-primary')}>
                                     Replying to {replyToMessage.sender_name}
                                   </span>
-                                  <p className={`text-xs line-clamp-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                  <p className={cn("text-xs line-clamp-1 opacity-70", isDarkMode ? 'text-neutral-400' : 'text-neutral-500')}>
                                     {replyToMessage.content}
                                   </p>
                                 </div>
                             </div>
-                            <button onClick={cancelReply} className="text-gray-500 hover:text-gray-700"><X size={14}/></button>
+                            <button onClick={cancelReply} className="text-neutral-500 hover:text-neutral-700 p-1"><X size={14}/></button>
                         </div>
                     )}
-                    <div className={`flex items-center rounded-full border px-4 py-2 shadow-sm ${
-                      isDarkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'
-                    }`}>
-                        <button onClick={() => fileInputRef.current?.click()} className={`mr-2 ${isDarkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}>
-                            <Paperclip size={20} />
-                        </button>
-                        <EmojiPickerButton onEmojiSelect={handleEmojiSelect} className="mr-2" />
-                        <input 
-                            type="file" 
-                            ref={fileInputRef} 
-                            className="hidden" 
-                            accept="image/*"
-                            onChange={handleFileSelect}
-                        />
-                        <input
-                            id="message-input"
-                            type="text"
-                            placeholder="Type a message..."
-                            className={`flex-1 bg-transparent focus:outline-none ${
-                              isDarkMode ? 'text-white placeholder-gray-400' : 'text-gray-700'
-                            }`}
-                            value={inputText}
-                            onChange={handleTyping}
-                            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                        />
-                        <button onClick={handleSendMessage} className={`ml-2 ${isDarkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-500 hover:text-blue-600'}`}>
-                            <Send size={20} />
-                        </button>
+                    
+                    <div className="flex items-end gap-2">
+                        <div className={cn(
+                            "flex-1 flex items-end rounded-2xl border shadow-sm px-4 py-2 transition-all focus-within:ring-2 focus-within:ring-brand-primary/20 focus-within:border-brand-primary",
+                            isDarkMode ? 'bg-neutral-800 border-neutral-700' : 'bg-white border-neutral-200'
+                        )}>
+                            <div className="flex pb-2 gap-1">
+                                <Tooltip content="Attach File">
+                                    <button onClick={() => fileInputRef.current?.click()} className={cn("p-1 rounded-full transition-colors", isDarkMode ? 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700' : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100')}>
+                                        <Paperclip size={20} />
+                                    </button>
+                                </Tooltip>
+                                <div className="relative">
+                                    <EmojiPickerButton onEmojiSelect={handleEmojiSelect} className={cn("p-1 rounded-full transition-colors", isDarkMode ? 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700' : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100')} />
+                                </div>
+                            </div>
+                            
+                            <input 
+                                type="file" 
+                                ref={fileInputRef} 
+                                className="hidden" 
+                                accept="image/*"
+                                onChange={handleFileSelect}
+                            />
+                            
+                            <input
+                                id="message-input"
+                                type="text"
+                                placeholder="Type a message..."
+                                className={cn(
+                                    "flex-1 bg-transparent focus:outline-none py-3 px-2 max-h-32 overflow-y-auto text-sm",
+                                    isDarkMode ? 'text-white placeholder:text-neutral-500' : 'text-neutral-900 placeholder:text-neutral-400'
+                                )}
+                                value={inputText}
+                                onChange={handleTyping}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                                autoComplete="off"
+                            />
+                        </div>
+                        
+                        <Button 
+                            onClick={handleSendMessage} 
+                            className={cn(
+                                "rounded-full h-12 w-12 shrink-0 shadow-md transition-transform active:scale-95",
+                                (!inputText.trim() && !previewFile) && "opacity-70"
+                            )}
+                            disabled={!inputText.trim() && !previewFile}
+                        >
+                            <Send size={20} className="ml-0.5" />
+                        </Button>
                     </div>
                 </div>
             </>
         ) : (
-            <div className={`flex-1 flex flex-col items-center justify-center ${
-              isDarkMode ? 'bg-gray-900 text-gray-400' : 'bg-[#f0f2f5] text-gray-500'
-            }`}>
-                <div className={`w-32 h-32 rounded-full flex items-center justify-center mb-4 ${
-                  isDarkMode ? 'bg-gray-800' : 'bg-gray-200'
-                }`}>
-                    <MessageSquare size={48} className={isDarkMode ? 'text-gray-600' : 'text-gray-400'} />
+            <div className={cn(
+                "flex-1 flex flex-col items-center justify-center p-8 text-center",
+                isDarkMode ? 'bg-neutral-950 text-neutral-400' : 'bg-[#f0f2f5] text-neutral-500'
+            )}>
+                <div className={cn(
+                    "w-32 h-32 rounded-full flex items-center justify-center mb-6 shadow-sm",
+                    isDarkMode ? 'bg-neutral-900' : 'bg-white'
+                )}>
+                    <MessageSquare size={48} className="text-brand-primary/60" />
                 </div>
-                <h2 className={`text-xl font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>FastSock Web</h2>
-                <p className="text-sm mt-2">Select a chat to start messaging</p>
-            </div>
-        )}
-
-        {/* Context Menu */}
-        {contextMenu && (
-            <div 
-                className={`absolute shadow-lg rounded-md border py-1 z-50 w-32 ${
-                  isDarkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'
-                }`}
-                style={{ top: contextMenu.y, left: contextMenu.x }}
-            >
-                <button 
-                    onClick={handleEdit}
-                    className={`w-full text-left px-4 py-2 text-sm flex items-center ${
-                      contextMenu.type !== 'text' 
-                        ? 'text-gray-400 cursor-not-allowed' 
-                        : (isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100')
-                    }`}
-                    disabled={contextMenu.type !== 'text'}
-                >
-                    <Edit2 size={14} className="mr-2"/> Edit
-                </button>
-                <button 
-                    onClick={handleDelete}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center ${
-                      isDarkMode ? 'text-red-400 hover:bg-gray-700' : 'text-red-600 hover:bg-gray-100'
-                    }`}
-                >
-                    <Trash2 size={14} className="mr-2"/> Delete
-                </button>
+                <h2 className={cn("text-2xl font-bold mb-2", isDarkMode ? 'text-neutral-200' : 'text-neutral-800')}>
+                    Welcome to FastSock
+                </h2>
+                <p className="max-w-md text-sm leading-relaxed opacity-80">
+                    Select a conversation from the sidebar to start chatting. You can create rooms or message users directly.
+                </p>
             </div>
         )}
       </div>
 
       {/* Room Modal */}
       <Modal
-        open={isRoomModalOpen}
-        onClose={() => setIsRoomModalOpen(false)}
+        open={isCreateRoomModalOpen}
+        onClose={() => setCreateRoomModalOpen(false)}
         title="Create New Room"
         footer={
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setIsRoomModalOpen(false)}>
+          <div className="flex justify-end gap-2 w-full">
+            <Button type="button" variant="outline" onClick={() => setCreateRoomModalOpen(false)}>
               Cancel
             </Button>
             <Button type="button" onClick={handleCreateRoom}>
-              Create
+              Create Room
             </Button>
           </div>
         }
       >
-        <div className="space-y-4">
+        <div className="space-y-4 py-2">
           <Input
             type="text"
             placeholder="Room Name"
             value={newRoomName}
             onChange={(e) => setNewRoomName(e.target.value)}
-            className={isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}
           />
           <div>
-            <p className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-neutral-300' : 'text-neutral-700'}`}>Select Members:</p>
-            <div className={`max-h-48 overflow-y-auto border rounded-md p-2 space-y-2 ${
-              isDarkMode ? 'border-gray-600 bg-gray-800' : 'border-neutral-200'
-            }`}>
-              {users.map((u) => (
-                <label key={u.id} className={`flex items-center gap-2 cursor-pointer ${
-                  isDarkMode ? 'text-white' : 'text-neutral-700'
-                }`}>
-                  <input
-                    type="checkbox"
-                    className="rounded text-brand-primary focus:ring-brand-primary"
-                    checked={selectedMembers.includes(u.id)}
-                    onChange={(e) => {
-                      if (e.target.checked) setSelectedMembers((prev) => [...prev, u.id]);
-                      else setSelectedMembers((prev) => prev.filter((id) => id !== u.id));
-                    }}
-                  />
-                  <span className="text-sm">{u.full_name || u.email}</span>
-                </label>
-              ))}
-            </div>
+            <p className={cn("text-sm font-medium mb-3", isDarkMode ? 'text-neutral-300' : 'text-neutral-700')}>Select Members</p>
+            <ScrollArea className={cn(
+                "h-60 rounded-md border",
+                isDarkMode ? 'border-neutral-800 bg-neutral-900' : 'border-neutral-200 bg-neutral-50'
+            )}>
+              <div className="p-2 space-y-1">
+                {users.map((u) => (
+                  <div key={u.id} className={cn(
+                      "flex items-center space-x-3 p-2 rounded-md hover:bg-accent transition-colors",
+                      isDarkMode ? 'hover:bg-neutral-800' : 'hover:bg-neutral-100'
+                  )}>
+                    <Checkbox 
+                        id={`user-${u.id}`}
+                        checked={selectedMembers.includes(u.id)}
+                        onCheckedChange={(checked) => {
+                            if (checked) setSelectedMembers((prev) => [...prev, u.id]);
+                            else setSelectedMembers((prev) => prev.filter((id) => id !== u.id));
+                        }}
+                    />
+                    <label 
+                        htmlFor={`user-${u.id}`}
+                        className="flex items-center space-x-3 cursor-pointer flex-1"
+                    >
+                        <Avatar className="w-8 h-8" fallback={u.full_name?.[0] || u.email[0]} />
+                        <div className="flex flex-col">
+                            <span className={cn("text-sm font-medium", isDarkMode ? 'text-neutral-200' : 'text-neutral-900')}>
+                                {u.full_name || u.email}
+                            </span>
+                            <span className={cn("text-xs", isDarkMode ? 'text-neutral-500' : 'text-neutral-500')}>
+                                {u.email}
+                            </span>
+                        </div>
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
           </div>
         </div>
       </Modal>

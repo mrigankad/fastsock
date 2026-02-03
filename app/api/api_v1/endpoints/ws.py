@@ -163,6 +163,59 @@ async def websocket_endpoint(
                         # Broadcast to find the sender
                         await manager.broadcast(read_receipt)
 
+            elif event.event == "message.reaction":
+                message_id = event.data.get("message_id")
+                emoji = event.data.get("emoji")
+                
+                if message_id and emoji:
+                    async with AsyncSessionLocal() as db:
+                        result = await db.execute(select(Message).where(Message.id == message_id))
+                        msg = result.scalar_one_or_none()
+                        
+                        if msg:
+                            # Update reactions
+                            reactions = dict(msg.reactions) if msg.reactions else {}
+                            user_id_str = str(current_user.id)
+                            
+                            current_users = reactions.get(emoji, [])
+                            if user_id_str in current_users:
+                                current_users.remove(user_id_str)
+                            else:
+                                current_users.append(user_id_str)
+                            
+                            if not current_users:
+                                if emoji in reactions:
+                                    del reactions[emoji]
+                            else:
+                                reactions[emoji] = current_users
+                                
+                            stmt = update(Message).where(Message.id == message_id).values(reactions=reactions)
+                            await db.execute(stmt)
+                            await db.commit()
+                            
+                            reaction_event = WSEvent(
+                                event="message.reaction",
+                                data={
+                                    "message_id": message_id,
+                                    "reactions": reactions,
+                                    "room_id": msg.room_id
+                                }
+                            )
+                            
+                            if msg.room_id:
+                                stmt = select(ChatRoom).where(ChatRoom.id == msg.room_id).options(selectinload(ChatRoom.members))
+                                result = await db.execute(stmt)
+                                room = result.scalar_one_or_none()
+                                if room:
+                                    reaction_event.recipient_ids = [m.id for m in room.members]
+                                    await manager.broadcast(reaction_event)
+                            else:
+                                recipient_ids = {msg.sender_id}
+                                if msg.receiver_id:
+                                    recipient_ids.add(msg.receiver_id)
+                                reaction_event.recipient_ids = list(recipient_ids)
+                                await manager.broadcast(reaction_event)
+
             elif event.event == "typing.start":
                 receiver_id = event.data.get("receiver_id")
                 if receiver_id:

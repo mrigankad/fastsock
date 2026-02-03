@@ -5,6 +5,7 @@ import { useAuth } from './context/AuthContext';
 import { ChatProvider } from './context/ChatContext';
 import { CallProvider } from './context/CallContext';
 import { useThemeStore } from './store/themeStore';
+import { TooltipProvider } from './components/ui';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Chat from './pages/Chat';
@@ -34,7 +35,7 @@ function App() {
   }, [isDarkMode]);
 
   return (
-    <>
+    <TooltipProvider>
       <Toaster position="top-right" />
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -50,7 +51,7 @@ function App() {
         {/* Catch all - 404 */}
         <Route path="*" element={<NotFound />} />
       </Routes>
-    </>
+    </TooltipProvider>
   );
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { PhoneOff, Video, VideoOff, Mic, MicOff } from 'lucide-react';
-import { Button, Modal } from '../design-system';
+import { Button, Modal } from './ui';
 import { useCall } from '../context/CallContext';
 
 const VideoTile = ({ stream, muted, className }: { stream: MediaStream | null; muted?: boolean; className?: string }) => {
