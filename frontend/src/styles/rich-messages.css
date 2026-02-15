@@ -1,0 +1,321 @@
+/* ─── Rich Message Formatting ─── */
+
+/* Fenced code blocks */
+.msg-code-block {
+    position: relative;
+    margin: 8px 0;
+    border-radius: 8px;
+    background: #1e1e2e;
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.msg-code-block pre {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    color: #cdd6f4;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', 'Monaco', monospace;
+}
+
+.msg-code-block code {
+    font-family: inherit;
+    background: transparent;
+    padding: 0;
+    border: none;
+}
+
+.code-lang-label {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 2px 10px 3px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #a6adc8;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom-left-radius: 6px;
+    user-select: none;
+}
+
+/* Syntax highlighting colors (Catppuccin-inspired) */
+.code-keyword {
+    color: #cba6f7;
+    /* purple */
+}
+
+.code-string {
+    color: #a6e3a1;
+    /* green */
+}
+
+.code-comment {
+    color: #6c7086;
+    /* muted */
+    font-style: italic;
+}
+
+.code-number {
+    color: #fab387;
+    /* peach */
+}
+
+/* Inline code */
+.msg-inline-code {
+    background: var(--color-neutral-200, #e5e5e5);
+    color: var(--color-neutral-900, #171717);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    word-break: break-word;
+}
+
+/* @mentions */
+.msg-mention {
+    display: inline;
+    color: #6366f1;
+    background: rgba(99, 102, 241, 0.1);
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.msg-mention:hover {
+    background: rgba(99, 102, 241, 0.2);
+}
+
+/* Links */
+.msg-link {
+    color: #6366f1;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.msg-link:hover {
+    color: #4f46e5;
+}
+
+/* Blockquotes */
+.msg-blockquote {
+    border-left: 3px solid var(--color-neutral-300, #d4d4d4);
+    margin: 4px 0;
+    padding: 4px 12px;
+    color: var(--color-neutral-700, #404040);
+    background: var(--color-neutral-100, #f5f5f5);
+    border-radius: 0 6px 6px 0;
+}
+
+/* Lists */
+.msg-list {
+    margin: 4px 0;
+    padding-left: 20px;
+}
+
+.msg-list li {
+    margin: 2px 0;
+}
+
+.msg-list-ol {
+    list-style-type: decimal;
+}
+
+/* Horizontal rule */
+.msg-hr {
+    border: none;
+    border-top: 1px solid var(--color-neutral-300, #d4d4d4);
+    margin: 8px 0;
+}
+
+/* ─── Link Previews ─── */
+.link-preview {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+    padding: 10px 14px;
+    border: 1px solid var(--color-neutral-200, #e5e5e5);
+    border-radius: 10px;
+    background: var(--color-neutral-50, #fafafa);
+    max-width: 420px;
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.15s;
+}
+
+.link-preview:hover {
+    background: var(--color-neutral-100, #f5f5f5);
+}
+
+.link-preview-img {
+    width: 72px;
+    height: 72px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.link-preview-text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.link-preview-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--color-neutral-900, #171717);
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.link-preview-desc {
+    font-size: 12px;
+    color: var(--color-neutral-600, #525252);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.link-preview-domain {
+    font-size: 11px;
+    color: var(--color-neutral-500, #737373);
+    margin-top: auto;
+}
+
+/* ─── Pinned Message Banner ─── */
+.pinned-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--color-neutral-200, #e5e5e5);
+    background: #fefce8;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.pinned-banner:hover {
+    background: #fef9c3;
+}
+
+.pinned-banner-icon {
+    color: #ca8a04;
+    flex-shrink: 0;
+}
+
+.pinned-banner-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-neutral-800, #262626);
+}
+
+.pinned-banner-count {
+    font-size: 11px;
+    color: var(--color-neutral-500, #737373);
+    flex-shrink: 0;
+}
+
+/* ─── Presence Status Indicator ─── */
+.status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid white;
+    flex-shrink: 0;
+}
+
+.status-available {
+    background: #22c55e;
+}
+
+.status-busy {
+    background: #ef4444;
+}
+
+.status-dnd {
+    background: #ef4444;
+    position: relative;
+}
+
+.status-dnd::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 6px;
+    height: 2px;
+    background: white;
+    border-radius: 1px;
+}
+
+.status-away {
+    background: #f59e0b;
+}
+
+.status-offline {
+    background: #a1a1aa;
+}
+
+/* ─── Saved / Bookmarked messages ─── */
+.bookmark-icon {
+    transition: color 0.15s, transform 0.15s;
+}
+
+.bookmark-icon:hover {
+    transform: scale(1.15);
+}
+
+.bookmark-icon.bookmarked {
+    color: #f59e0b;
+    fill: #f59e0b;
+}
+
+/* ─── Dark mode adjustments ─── */
+.dark .msg-inline-code {
+    background: #334155;
+    color: #e2e8f0;
+}
+
+.dark .msg-blockquote {
+    background: #1e293b;
+    border-left-color: #475569;
+    color: #cbd5e1;
+}
+
+.dark .msg-mention {
+    color: #818cf8;
+    background: rgba(129, 140, 248, 0.15);
+}
+
+.dark .link-preview {
+    background: #1e293b;
+    border-color: #334155;
+}
+
+.dark .link-preview:hover {
+    background: #1e293b;
+}
+
+.dark .pinned-banner {
+    background: #422006;
+}
+
+.dark .pinned-banner:hover {
+    background: #451a03;
+}

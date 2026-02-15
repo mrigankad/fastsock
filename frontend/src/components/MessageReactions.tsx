@@ -18,6 +18,10 @@ export const MessageReactions: React.FC<MessageReactionsProps> = ({
 }) => {
   const [showPicker, setShowPicker] = useState(false);
 
+  const pillBase =
+    'inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold transition-colors' +
+    ' hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2';
+
   const handleReaction = (emoji: string) => {
     onReaction(messageId, emoji);
     setShowPicker(false);
@@ -42,11 +46,12 @@ export const MessageReactions: React.FC<MessageReactionsProps> = ({
           <button
             key={emoji}
             onClick={() => handleReaction(emoji)}
-            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-colors ${
+            className={`${pillBase} ${
               hasUserReacted(emoji)
-                ? 'bg-blue-100 text-blue-700 border border-blue-300'
-                : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
+                ? 'border-brand-primary bg-neutral-0 text-neutral-900'
+                : 'border-neutral-200 bg-neutral-0 text-neutral-700'
             }`}
+            aria-label={`React with ${emoji}`}
           >
             <span>{emoji}</span>
             <span className="font-medium">{count}</span>
@@ -61,11 +66,12 @@ export const MessageReactions: React.FC<MessageReactionsProps> = ({
           <button
             key={emoji}
             onClick={() => handleReaction(emoji)}
-            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-colors ${
+            className={`${pillBase} ${
               hasUserReacted(emoji)
-                ? 'bg-blue-100 text-blue-700 border border-blue-300'
-                : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
+                ? 'border-brand-primary bg-neutral-0 text-neutral-900'
+                : 'border-neutral-200 bg-neutral-0 text-neutral-700'
             }`}
+            aria-label={`React with ${emoji}`}
           >
             <span>{emoji}</span>
             {count > 0 && <span className="font-medium">{count}</span>}
@@ -77,19 +83,21 @@ export const MessageReactions: React.FC<MessageReactionsProps> = ({
       <div className="relative">
         <button
           onClick={() => setShowPicker(!showPicker)}
-          className="p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          className="grid h-7 w-7 place-items-center rounded-full text-neutral-600 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2"
+          aria-label="More reactions"
         >
           <Plus size={14} />
         </button>
 
         {showPicker && (
-          <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-10">
+          <div className="absolute bottom-full left-0 z-10 mb-2 rounded-xl border border-neutral-200 bg-neutral-0 p-2 shadow-lg">
             <div className="grid grid-cols-6 gap-1">
               {['❤️', '👍', '😂', '😮', '😢', '🎉', '🔥', '👏', '🤔', '👀', '🙏', '💯'].map((emoji) => (
                 <button
                   key={emoji}
                   onClick={() => handleReaction(emoji)}
-                  className="p-2 hover:bg-gray-100 rounded text-lg"
+                  className="grid h-9 w-9 place-items-center rounded-lg text-lg hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2"
+                  aria-label={`React with ${emoji}`}
                 >
                   {emoji}
                 </button>

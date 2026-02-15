@@ -12,10 +12,11 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         ref={ref}
         aria-invalid={invalid || props['aria-invalid']}
         className={cn(
-          'w-full rounded-md border border-neutral-300 bg-neutral-0 px-4 py-2 text-neutral-900 placeholder:text-neutral-400 shadow-sm',
-          'focus:outline-none focus:ring-2 focus:ring-brand-primary focus:border-brand-primary',
-          'disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-neutral-50',
-          invalid ? 'border-semantic-error focus:ring-semantic-error focus:border-semantic-error' : '',
+          'w-full rounded-xl border border-neutral-200 bg-white/50 px-4 py-2.5 text-neutral-900 placeholder:text-neutral-400 shadow-sm backdrop-blur-sm transition-all duration-200',
+          'dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-neutral-100',
+          'focus:border-brand-primary focus:bg-white focus:ring-4 focus:ring-brand-primary/10 focus:outline-none dark:focus:bg-neutral-800',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          invalid ? 'border-semantic-error focus:border-semantic-error focus:ring-semantic-error/10' : '',
           className,
         )}
         {...props}

@@ -24,3 +24,10 @@ htmlcov/
 Thumbs.db
 
 .trae/
+.vscode/
+.idea/
+*.swp
+*.swo
+.gemini/
+.agent/
+.claude/

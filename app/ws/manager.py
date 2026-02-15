@@ -44,44 +44,36 @@ class ConnectionManager:
     async def local_broadcast(self, data: str):
         event = WSEvent.model_validate_json(data)
 
+        sanitized = json.dumps(
+            {"event": event.event, "data": event.data},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
         if event.recipient_ids:
             for uid in event.recipient_ids:
                 if uid in self.active_connections:
                     try:
-                        await self.active_connections[uid].send_text(data)
+                        await self.active_connections[uid].send_text(sanitized)
                     except Exception:
                         pass
             return
         
-        # If it's a direct message/typing/read-receipt/update/delete, check if recipient is local
-        if event.event in ["message.receive", "typing.start", "typing.stop", "message.read_receipt", "message.update", "message.delete", "room.created"]:
+        if event.event in ["message.receive", "typing.start", "typing.stop", "message.read_receipt", "message.update", "message.delete", "room.created", "message.ack", "message.delivery_receipt"]:
             receiver_id = event.data.get("receiver_id")
-            room_id = event.data.get("room_id")
-            
-            # If room_id exists, broadcast to all active connections (simple approach for now)
-            # Ideal: broadcast only to room members
-            if room_id:
-                for connection in self.active_connections.values():
-                    # Optimization: In a real app we would track which user is in which room
-                    try:
-                        await connection.send_text(data)
-                    except Exception:
-                        pass
-                return
-
             if receiver_id and receiver_id in self.active_connections:
-                await self.active_connections[receiver_id].send_text(data)
+                await self.active_connections[receiver_id].send_text(sanitized)
                 
             # Also send to sender (for update/delete reflection on other devices)
             sender_id = event.data.get("sender_id")
             if sender_id and sender_id in self.active_connections:
-                await self.active_connections[sender_id].send_text(data)
+                await self.active_connections[sender_id].send_text(sanitized)
                 return
         
         # If it's a broadcast (like presence), send to all local connections
         for connection in self.active_connections.values():
             try:
-                await connection.send_text(data)
+                await connection.send_text(sanitized)
             except Exception:
                 pass # Handle stale connections
 

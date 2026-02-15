@@ -1,2 +1,27 @@
+@import "./design-system/tokens/fonts.css";
 @import "./design-system/tokens/tokens.css";
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background: var(--color-neutral-50);
+    color: var(--color-neutral-900);
+  }
+}

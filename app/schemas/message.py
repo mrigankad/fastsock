@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, List
 from pydantic import BaseModel
 from app.models.message import MessageType
 
@@ -20,6 +20,8 @@ class Message(MessageBase):
     timestamp: datetime
     is_read: bool
     message_type: str = "text"
+    status: str = "sent"
+    reactions: Dict[str, List[str]] = {}
 
     class Config:
         from_attributes = True

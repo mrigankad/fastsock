@@ -1,9 +1,13 @@
 import pytest
 from typing import AsyncGenerator, Generator
+import sys
+from pathlib import Path
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.main import app
 from app.db.base import Base
@@ -39,10 +43,12 @@ async def client(db_session) -> AsyncGenerator[AsyncClient, None]:
     # Mock Redis manager to avoid connection errors during tests
     from app.ws.manager import manager
     from unittest.mock import AsyncMock
+    from app.api.api_v1.endpoints import auth as auth_endpoints
     
     manager.start_redis = AsyncMock()
     manager.redis = AsyncMock()
     manager.broadcast = AsyncMock()
+    auth_endpoints.limiter.enabled = False
 
     async def override_get_db():
         yield db_session

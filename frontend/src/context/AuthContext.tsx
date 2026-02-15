@@ -6,8 +6,9 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, fullName: string) => Promise<void>;
+  signup: (email: string, password: string, fullName: string, username?: string) => Promise<void>;
   logout: () => void;
+  setUser: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -40,8 +41,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(userRes.data);
   };
 
-  const signup = async (email: string, password: string, fullName: string) => {
-    await authApi.signup(email, password, fullName);
+  const signup = async (email: string, password: string, fullName: string, username?: string) => {
+    await authApi.signup(email, password, fullName, username);
   };
 
   const logout = () => {
@@ -50,7 +51,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, signup, logout, setUser }}>
       {children}
     </AuthContext.Provider>
   );

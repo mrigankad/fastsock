@@ -1,35 +1,179 @@
 :root {
-  --color-brand-primary: #2563eb;
-  --color-brand-primary-hover: #1d4ed8;
+  --motion-fast: 150ms;
+  --motion-base: 250ms;
+  --motion-slow: 350ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
 
-  --color-semantic-success: #16a34a;
-  --color-semantic-warning: #d97706;
-  --color-semantic-error: #dc2626;
-  --color-semantic-info: #0ea5e9;
+  /* WhatsApp Inspired Palette */
+  --wa-green: #00a884;
+  --wa-green-dark: #008f6f;
+  --wa-light-green: #25d366;
+  --wa-bubble-out: #d9fdd3;
+  --wa-bubble-in: #ffffff;
+  --wa-bg-sidebar: #ffffff;
+  --wa-bg-chat: #efeae2;
+  --wa-bg-header: #f0f2f5;
 
+  /* Brand Colors - Now WhatsApp Green */
+  --color-brand-primary: var(--wa-green);
+  --color-brand-primary-hover: var(--wa-green-dark);
+  --color-brand-light: var(--wa-light-green);
+  --color-brand-subtle: #00ce64;
+
+  /* Role Colors (Hierarchy) */
+  --color-bg-app: var(--wa-bg-sidebar);
+  --color-bg-sidebar: var(--wa-bg-sidebar);
+  --color-bg-header: var(--wa-bg-header);
+  --color-bg-chat: var(--wa-bg-chat);
+  --color-surface: #ffffff;
+  --color-surface-alt: #f0f2f5;
+  --color-surface-alt-hover: #f5f6f6;
+  --color-border: #e5e7eb;
+  --color-text-primary: #111b21;
+  --color-text-secondary: #54656f;
+  --color-text-muted: #667781;
+  --color-accent: var(--wa-green);
+  --color-accent-soft: rgba(0, 168, 132, 0.15);
+  --color-bubble-out: var(--wa-bubble-out);
+  --color-bubble-in: var(--wa-bubble-in);
+  --color-receipt-read: #53bdeb;
+
+  /* Semantic Colors */
+  --color-semantic-success: #10b981;
+  /* Emerald 500 */
+  --color-semantic-warning: #f59e0b;
+  /* Amber 500 */
+  --color-semantic-error: #ef4444;
+  /* Red 500 */
+  --color-semantic-info: #3b82f6;
+  /* Blue 500 */
+
+  /* Neutral Colors - Slate/Zinc Scale */
   --color-neutral-0: #ffffff;
   --color-neutral-50: #f8fafc;
+  /* Slate 50 */
   --color-neutral-100: #f1f5f9;
+  /* Slate 100 */
   --color-neutral-200: #e2e8f0;
+  /* Slate 200 */
   --color-neutral-300: #cbd5e1;
+  /* Slate 300 */
   --color-neutral-400: #94a3b8;
+  /* Slate 400 */
   --color-neutral-500: #64748b;
+  /* Slate 500 */
   --color-neutral-600: #475569;
+  /* Slate 600 */
   --color-neutral-700: #334155;
-  --color-neutral-800: #1f2937;
+  /* Slate 700 */
+  --color-neutral-800: #1e293b;
+  /* Slate 800 */
   --color-neutral-900: #0f172a;
+  /* Slate 900 */
+
+  /* Modern Effects */
+  --glass-surface: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-blur: 12px;
 
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
+  --radius-xl: 24px;
   --radius-full: 9999px;
 
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
-    "Segoe UI Emoji";
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-size-xs: 0.75rem;
+  --line-height-xs: 1rem;
+  --font-size-sm: 0.875rem;
+  --line-height-sm: 1.25rem;
+  --font-size-base: 1rem;
+  --line-height-base: 1.5rem;
+  --font-size-lg: 1.125rem;
+  --line-height-lg: 1.75rem;
+  --font-size-xl: 1.25rem;
+  --line-height-xl: 1.75rem;
+  --font-size-2xl: 1.5rem;
+  --line-height-2xl: 2rem;
+  --font-size-3xl: 1.875rem;
+  --line-height-3xl: 2.25rem;
 }
 
+html.dark {
+  /* WhatsApp Deep Dark Palette */
+  --wa-green: #00a884;
+  --wa-bubble-out: #005c4b;
+  --wa-bubble-in: #202c33;
+  --wa-bg-sidebar: #111b21;
+  --wa-bg-chat: #0b141a;
+  --wa-bg-header: #202c33;
+
+  /* Brand Colors - Dark Mode */
+  --color-brand-primary: var(--wa-green);
+  --color-brand-primary-hover: #008f6f;
+  --color-brand-light: #005c4b;
+  --color-brand-subtle: #00a884;
+
+  /* Role Colors (Hierarchy) - Dark */
+  --color-bg-app: var(--wa-bg-sidebar);
+  --color-bg-sidebar: var(--wa-bg-sidebar);
+  --color-bg-header: var(--wa-bg-header);
+  --color-bg-chat: var(--wa-bg-chat);
+  --color-surface: #111b21;
+  --color-surface-alt: #202c33;
+  --color-surface-alt-hover: #202c33;
+  --color-border: #334155;
+  --color-text-primary: #e9edef;
+  --color-text-secondary: #aebac1;
+  --color-text-muted: #8696a0;
+  --color-accent: var(--wa-green);
+  --color-accent-soft: rgba(0, 168, 132, 0.2);
+  --color-bubble-out: #005c4b;
+  --color-bubble-in: #202c33;
+  --color-receipt-read: #53bdeb;
+
+  --color-semantic-success: #34d399;
+  /* Emerald 400 */
+  --color-semantic-warning: #fbbf24;
+  /* Amber 400 */
+  --color-semantic-error: #f87171;
+  /* Red 400 */
+  --color-semantic-info: #60a5fa;
+  /* Blue 400 */
+
+  --color-neutral-0: #0f172a;
+  /* Slate 900 */
+  --color-neutral-50: #1e293b;
+  /* Slate 800 */
+  --color-neutral-100: #334155;
+  /* Slate 700 */
+  --color-neutral-200: #475569;
+  /* Slate 600 */
+  --color-neutral-300: #64748b;
+  /* Slate 500 */
+  --color-neutral-400: #94a3b8;
+  /* Slate 400 */
+  --color-neutral-500: #cbd5e1;
+  /* Slate 300 */
+  --color-neutral-600: #e2e8f0;
+  /* Slate 200 */
+  --color-neutral-700: #f1f5f9;
+  /* Slate 100 */
+  --color-neutral-800: #f8fafc;
+  /* Slate 50 */
+  --color-neutral-900: #ffffff;
+  /* White */
+
+  --glass-surface: rgba(15, 23, 42, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.1);
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.35);
+  --shadow-md: 0 10px 22px -8px rgb(0 0 0 / 0.55);
+  --shadow-lg: 0 18px 36px -10px rgb(0 0 0 / 0.65);
+  --shadow-xl: 0 25px 50px -12px rgb(0 0 0 / 0.75);
+}
